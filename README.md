@@ -1,2 +1,2 @@
 # pixelprobe
-Image analysis tool with denoising and CNN tools. 
+Image analyzer with denoising and CNN tools. 
