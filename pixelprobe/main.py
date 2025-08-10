@@ -30,7 +30,7 @@ def main(config_path: Optional[Path] = None) -> int:
         setup_logging(level=config['log_level'])
         logger = logging.getLogger(__name__)
         
-        logger.info("Starting PixelProbe Image Analysis Laboratory")
+        logger.info("Starting PixelProbe")
         
         # Create and run application
         app = PixelProbeApp(config=config)
