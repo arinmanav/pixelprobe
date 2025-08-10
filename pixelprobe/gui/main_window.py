@@ -12,6 +12,7 @@ from pixelprobe.utils.config import load_config, ensure_directories
 from pixelprobe.gui.dialogs.file_dialogs import FileDialogs
 from pixelprobe.utils.file_io import ArrayLoader, ImageLoader
 from pixelprobe.processing.denoising import AdvancedDenoiseProcessor
+from pixelprobe.analysis.statistics import StatisticalAnalyzer
 
 
 class PixelProbeApp:
@@ -45,6 +46,9 @@ class PixelProbeApp:
 
         # Initialize processing
         self.denoiser = AdvancedDenoiseProcessor()
+
+        # Initialize analysis
+        self.analyzer = StatisticalAnalyzer()
         
         self.logger.info("PixelProbe application initialized")    
     
@@ -350,6 +354,203 @@ class PixelProbeApp:
         
         # Show denoising options dialog
         self.show_denoise_options()
+        
+    def show_statistics_window(self, basic_stats, quality_metrics):
+        """Display statistics in a professional window"""
+        import tkinter as tk
+        from tkinter import ttk
+        
+        # Create statistics window
+        stats_window = tk.Toplevel(self.root)
+        stats_window.title("Image Statistics and Analysis")
+        stats_window.geometry("800x600")
+        stats_window.transient(self.root)
+        
+        # Center the window
+        stats_window.update_idletasks()
+        x = (stats_window.winfo_screenwidth() // 2) - (800 // 2)
+        y = (stats_window.winfo_screenheight() // 2) - (600 // 2)
+        stats_window.geometry(f"800x600+{x}+{y}")
+        
+        # Create notebook for tabs
+        notebook = ttk.Notebook(stats_window)
+        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Basic Statistics Tab
+        basic_frame = ttk.Frame(notebook)
+        notebook.add(basic_frame, text="Basic Statistics")
+        
+        # Create scrollable text widget for basic stats
+        basic_text = tk.Text(basic_frame, font=("Consolas", 12), wrap='word')
+        basic_scrollbar = tk.Scrollbar(basic_frame, orient="vertical", command=basic_text.yview)
+        basic_text.configure(yscrollcommand=basic_scrollbar.set)
+        
+        basic_text.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        basic_scrollbar.pack(side="right", fill="y")
+        
+        # Format and display basic statistics
+        stats_text = self.format_statistics_text(basic_stats, quality_metrics)
+        basic_text.insert('1.0', stats_text)
+        basic_text.config(state='disabled')  # Make read-only
+        
+        # Quality Metrics Tab
+        quality_frame = ttk.Frame(notebook)
+        notebook.add(quality_frame, text="Quality Metrics")
+        
+        # Quality metrics display
+        quality_text = tk.Text(quality_frame, font=("Consolas", 14), wrap='word')
+        quality_scroll = tk.Scrollbar(quality_frame, orient="vertical", command=quality_text.yview)
+        quality_text.configure(yscrollcommand=quality_scroll.set)
+        
+        quality_text.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        quality_scroll.pack(side="right", fill="y")
+        
+        # Format quality metrics
+        quality_text_content = f"""
+    IMAGE QUALITY ANALYSIS
+    {'='*50}
+
+    🔍 SHARPNESS: {quality_metrics.get('sharpness', 0):.2f}
+    Higher values indicate sharper images
+
+    📊 CONTRAST: {quality_metrics.get('contrast', 0):.2f}
+    RMS contrast measure (higher = more contrast)
+
+    💡 BRIGHTNESS: {quality_metrics.get('brightness', 0):.2f}
+    Average pixel intensity (0-255)
+
+    🔇 NOISE ESTIMATE: {quality_metrics.get('noise_estimate', 0):.4f}
+    Estimated noise level (lower = cleaner)
+
+    {'='*50}
+    QUALITY ASSESSMENT:
+
+    Sharpness: {'Excellent' if quality_metrics.get('sharpness', 0) > 1000 else 'Good' if quality_metrics.get('sharpness', 0) > 500 else 'Poor'}
+    Contrast: {'High' if quality_metrics.get('contrast', 0) > 50 else 'Medium' if quality_metrics.get('contrast', 0) > 25 else 'Low'}
+    Noise Level: {'Low' if quality_metrics.get('noise_estimate', 0) < 2 else 'Medium' if quality_metrics.get('noise_estimate', 0) < 5 else 'High'}
+    """
+        
+        quality_text.insert('1.0', quality_text_content)
+        quality_text.config(state='disabled')
+        
+        # Histogram Tab
+        histogram_frame = ttk.Frame(notebook)
+        notebook.add(histogram_frame, text="Histogram")
+        
+        # Add histogram plot
+        self.create_histogram_plot(histogram_frame)
+        
+        # Close button
+        button_frame = tk.Frame(stats_window)
+        button_frame.pack(pady=10)
+        
+        close_btn = tk.Button(button_frame, text="Close", command=stats_window.destroy,
+                            font=("Arial", 12), bg='#2196F3', fg='white',
+                            padx=30, pady=8)
+        close_btn.pack()
+
+    def format_statistics_text(self, basic_stats, quality_metrics):
+        """Format statistics into readable text"""
+        if not basic_stats:
+            return "No statistics available"
+        
+        text = f"""
+    IMAGE STATISTICS REPORT
+    {'='*60}
+
+    📐 IMAGE DIMENSIONS
+    Shape: {basic_stats.get('shape', 'N/A')}
+    Data Type: {basic_stats.get('dtype', 'N/A')}
+    Channels: {basic_stats.get('channels', 'N/A')}
+
+    📊 BASIC STATISTICS
+    """
+        
+        if basic_stats.get('channels') == 1:
+            # Grayscale image
+            text += f"""
+    Mean: {basic_stats.get('mean', 0):.2f}
+    Standard Deviation: {basic_stats.get('std', 0):.2f}
+    Minimum: {basic_stats.get('min', 0):.2f}
+    Maximum: {basic_stats.get('max', 0):.2f}
+    Median: {basic_stats.get('median', 0):.2f}
+    Mode: {basic_stats.get('mode', 0):.2f}
+    Variance: {basic_stats.get('variance', 0):.2f}
+    Skewness: {basic_stats.get('skewness', 0):.4f}
+    Kurtosis: {basic_stats.get('kurtosis', 0):.4f}
+    Entropy: {basic_stats.get('entropy', 0):.4f} bits
+    """
+        else:
+            # Color image
+            text += f"""
+    🌈 OVERALL STATISTICS
+    Mean: {basic_stats.get('overall', {}).get('mean', 0):.2f}
+    Standard Deviation: {basic_stats.get('overall', {}).get('std', 0):.2f}
+    Minimum: {basic_stats.get('overall', {}).get('min', 0):.2f}
+    Maximum: {basic_stats.get('overall', {}).get('max', 0):.2f}
+
+    📈 BY CHANNEL
+    """
+            for channel, stats in basic_stats.get('by_channel', {}).items():
+                text += f"""
+    {channel} Channel:
+        Mean: {stats.get('mean', 0):.2f}
+        Std Dev: {stats.get('std', 0):.2f}
+        Min: {stats.get('min', 0):.2f}
+        Max: {stats.get('max', 0):.2f}
+        Entropy: {stats.get('entropy', 0):.4f} bits
+    """
+        
+        return text
+
+    def create_histogram_plot(self, parent_frame):
+        """Create histogram plot in the statistics window"""
+        try:
+            # Generate histogram data
+            hist_data = self.analyzer.generate_histogram_data(self.current_image)
+            
+            # Create matplotlib figure
+            fig = Figure(figsize=(10, 6), dpi=80)
+            
+            if hist_data.get('type') == 'grayscale':
+                # Grayscale histogram
+                ax = fig.add_subplot(111)
+                ax.hist(hist_data['data'], bins=256, range=(0, 255), color='gray', alpha=0.7)
+                ax.set_title('Grayscale Histogram', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Pixel Intensity')
+                ax.set_ylabel('Frequency')
+                ax.grid(True, alpha=0.3)
+                
+            else:
+                # Color histogram
+                ax = fig.add_subplot(111)
+                colors = ['red', 'green', 'blue']
+                
+                for color in colors:
+                    if color in hist_data.get('histograms', {}):
+                        hist_info = hist_data['histograms'][color]
+                        ax.plot(hist_info['bins'][:-1], hist_info['hist'], 
+                            color=color, alpha=0.7, linewidth=2, label=color.capitalize())
+                
+                ax.set_title('RGB Histogram', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Pixel Intensity')
+                ax.set_ylabel('Frequency')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+            
+            fig.tight_layout()
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, parent_frame)
+            canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+            canvas.draw()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create histogram plot: {e}")
+            error_label = tk.Label(parent_frame, text="Failed to generate histogram", 
+                                font=("Arial", 12), fg="red")
+            error_label.pack(pady=50)
+
 
     def segment_action(self):
         """Handle segment button click"""
@@ -364,7 +565,27 @@ class PixelProbeApp:
     def stats_action(self):
         """Handle statistics button click"""
         self.logger.info("Statistics action triggered")
-        self.update_status("Statistics not yet implemented")
+        
+        if self.current_image is None:
+            self.update_status_persistent("No image loaded - please load an image first")
+            return
+        
+        self.update_status("Calculating image statistics...")
+        
+        try:
+            # Calculate statistics
+            basic_stats = self.analyzer.basic_statistics(self.current_image)
+            quality_metrics = self.analyzer.image_quality_metrics(self.current_image)
+            
+            # Show statistics in a new window
+            self.show_statistics_window(basic_stats, quality_metrics)
+            
+            self.update_status_persistent("Statistics calculated successfully")
+            self.logger.info("Statistics window displayed")
+            
+        except Exception as e:
+            self.logger.error(f"Statistics calculation failed: {e}")
+            self.update_status_persistent("Statistics calculation failed")
     
     def toggle_theme(self):
         """Toggle between light and dark themes"""
@@ -384,3 +605,4 @@ class PixelProbeApp:
         self.logger.info("Starting PixelProbe main loop")
         self.root.mainloop()
         self.logger.info("PixelProbe application closed")
+    
