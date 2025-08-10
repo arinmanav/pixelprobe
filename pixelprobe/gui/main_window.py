@@ -551,7 +551,6 @@ class PixelProbeApp:
                                 font=("Arial", 12), fg="red")
             error_label.pack(pady=50)
 
-
     def segment_action(self):
         """Handle segment button click"""
         self.logger.info("Segment action triggered")
@@ -580,12 +579,12 @@ class PixelProbeApp:
             # Show statistics in a new window
             self.show_statistics_window(basic_stats, quality_metrics)
             
-            self.update_status_persistent("Statistics calculated successfully")
+            self.update_status("Statistics calculated successfully")
             self.logger.info("Statistics window displayed")
             
         except Exception as e:
             self.logger.error(f"Statistics calculation failed: {e}")
-            self.update_status_persistent("Statistics calculation failed")
+            self.update_status("Statistics calculation failed")
     
     def toggle_theme(self):
         """Toggle between light and dark themes"""
