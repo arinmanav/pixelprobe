@@ -3,6 +3,7 @@ Main window for PixelProbe application
 """
 import customtkinter as ctk
 import logging
+import numpy as np
 from typing import Dict, Any, Optional
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -13,6 +14,7 @@ from pixelprobe.gui.dialogs.file_dialogs import FileDialogs
 from pixelprobe.utils.file_io import ArrayLoader, ImageLoader
 from pixelprobe.processing.denoising import AdvancedDenoiseProcessor
 from pixelprobe.analysis.statistics import StatisticalAnalyzer
+from pixelprobe.core.array_handler import ArrayHandler
 
 
 class PixelProbeApp:
@@ -27,10 +29,13 @@ class PixelProbeApp:
         self.file_dialogs = FileDialogs()
         self.array_loader = ArrayLoader()
         self.image_loader = ImageLoader()
+        self.array_handler = ArrayHandler()
 
         # Current loaded data
         self.current_array = None
-        self.current_image = None        
+        self.current_image = None
+        self.current_items = []  # List of loaded item numbers
+        self.current_operation = None  # 'single', 'multiple', or 'average'        
 
         # Ensure required directories exist
         ensure_directories(self.config)
@@ -317,12 +322,127 @@ class PixelProbeApp:
         self.update_status("Selecting data directory...")
         
         # Get directory from user
-        directory = self.file_dialogs.select_directory("Select Data Directory")
-        if directory:
-            self.update_status(f"Selected directory: {directory.name}")
-            self.logger.info(f"Data directory selected: {directory}")
-        else:
+        directory = self.file_dialogs.select_directory("Select Array Data Directory")
+        if not directory:
             self.update_status("Data loading cancelled")
+            return
+        
+        # Set directory in array handler
+        if not self.array_handler.set_directory(directory):
+            self.update_status("No valid array files found in directory")
+            return
+        
+        self.update_status(f"Found {len(self.array_handler.get_available_items())} items")
+        
+        # Show array selection dialog
+        self._show_array_selection_dialog()
+    
+    def _show_array_selection_dialog(self):
+        """Show dialog for selecting array items"""
+        from pixelprobe.gui.dialogs.array_dialogs import ArraySelectionDialog
+        
+        dialog = ArraySelectionDialog(self.root, self.array_handler)
+        result = dialog.show()
+        
+        if result is None:
+            self.update_status("Array selection cancelled")
+            return
+        
+        selected_items, operation = result
+        self.current_items = selected_items
+        self.current_operation = operation
+        
+        # Load arrays based on operation
+        self._load_selected_arrays(selected_items, operation)
+    
+    def _load_selected_arrays(self, selected_items, operation):
+        """Load the selected arrays"""
+        try:
+            self.update_status(f"Loading {len(selected_items)} items...")
+            
+            if operation == "single":
+                # Load single item
+                item_num = selected_items[0]
+                array_data = self.array_handler.load_item(item_num)
+                
+                if array_data is not None:
+                    self.current_array = array_data
+                    self.current_image = self._array_to_display_image(array_data)
+                    self.display_image(self.current_image, f"Array Item {item_num}")
+                    self.update_status(f"Loaded item {item_num} - Shape: {array_data.shape}")
+                else:
+                    self.update_status(f"Failed to load item {item_num}")
+            
+            elif operation == "multiple":
+                # Load multiple items - display first one
+                arrays = self.array_handler.load_multiple_items(selected_items)
+                
+                if arrays:
+                    # Display first array
+                    first_item = selected_items[0]
+                    self.current_array = arrays[first_item]
+                    self.current_image = self._array_to_display_image(self.current_array)
+                    self.display_image(self.current_image, f"Items {selected_items[0]}-{selected_items[-1]} (showing {first_item})")
+                    
+                    # Store all arrays for later use
+                    self._loaded_arrays = arrays
+                    self.update_status(f"Loaded {len(arrays)} items - Showing item {first_item}")
+                else:
+                    self.update_status("Failed to load items")
+            
+            elif operation == "average":
+                # Average items
+                averaged_array = self.array_handler.average_items(selected_items)
+                
+                if averaged_array is not None:
+                    self.current_array = averaged_array
+                    self.current_image = self._array_to_display_image(averaged_array)
+                    self.display_image(self.current_image, f"Averaged Items {selected_items[0]}-{selected_items[-1]}")
+                    self.update_status(f"Averaged {len(selected_items)} items - Shape: {averaged_array.shape}")
+                else:
+                    self.update_status("Failed to average items")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading arrays: {e}")
+            self.update_status(f"Error loading arrays: {str(e)}")
+    
+    def _array_to_display_image(self, array_data):
+        """Convert array data to displayable image format"""
+        try:
+            # Handle different array dimensions
+            if len(array_data.shape) == 2:
+                # 2D array - grayscale
+                # Normalize to 0-255 range
+                normalized = ((array_data - array_data.min()) / 
+                            (array_data.max() - array_data.min()) * 255).astype(np.uint8)
+                return normalized
+            
+            elif len(array_data.shape) == 3:
+                if array_data.shape[2] == 3:
+                    # RGB image
+                    normalized = ((array_data - array_data.min()) / 
+                                (array_data.max() - array_data.min()) * 255).astype(np.uint8)
+                    return normalized
+                else:
+                    # 3D array - take first slice
+                    slice_data = array_data[:, :, 0]
+                    normalized = ((slice_data - slice_data.min()) / 
+                                (slice_data.max() - slice_data.min()) * 255).astype(np.uint8)
+                    return normalized
+            
+            else:
+                # Higher dimension - take 2D slice
+                while len(array_data.shape) > 2:
+                    array_data = array_data[..., 0]
+                
+                normalized = ((array_data - array_data.min()) / 
+                            (array_data.max() - array_data.min()) * 255).astype(np.uint8)
+                return normalized
+                
+        except Exception as e:
+            self.logger.error(f"Error converting array to image: {e}")
+            # Return a simple placeholder
+            return np.zeros((100, 100), dtype=np.uint8)
 
     def load_image_action(self):
         """Handle load image button click"""
@@ -349,11 +469,19 @@ class PixelProbeApp:
         self.logger.info("Denoise action triggered")
         
         if self.current_image is None:
-            self.update_status_persistent("No image loaded - please load an image first")
+            self.update_status_persistent("No image loaded - please load an image or array data first")
             return
         
         # Show denoising options dialog
         self.show_denoise_options()
+    
+    def update_status_persistent(self, message: str):
+        """Update status with a persistent message that stays longer"""
+        self.status_label.configure(text=message)
+        self.root.update_idletasks()
+        
+        # Clear the message after 8 seconds
+        self.root.after(8000, lambda: self.update_status("Ready"))
         
     def show_statistics_window(self, basic_stats, quality_metrics):
         """Display statistics in a professional window"""
@@ -566,7 +694,7 @@ class PixelProbeApp:
         self.logger.info("Statistics action triggered")
         
         if self.current_image is None:
-            self.update_status_persistent("No image loaded - please load an image first")
+            self.update_status_persistent("No image loaded - please load an image or array data first")
             return
         
         self.update_status("Calculating image statistics...")
@@ -604,4 +732,3 @@ class PixelProbeApp:
         self.logger.info("Starting PixelProbe main loop")
         self.root.mainloop()
         self.logger.info("PixelProbe application closed")
-    
