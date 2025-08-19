@@ -185,32 +185,54 @@ class PixelProbeApp:
     """
         
         return text
+
     def show_denoise_options(self):
-        """Show denoising method selection dialog with improved styling"""
+        """Show denoising method selection dialog with vertical layout and scrollbar"""
         
-        # Create options window with larger size
+        # Create options window with better size for vertical layout
         options_window = tk.Toplevel(self.root)
         options_window.title("PixelProbe - Denoising Method Selection")
-        options_window.geometry("800x1200")
+        options_window.geometry("1200x1300")
         options_window.transient(self.root)
         options_window.grab_set()
         
         # Configure window background
         options_window.configure(bg='#2b2b2b')
         
-        # Main frame with padding
-        main_frame = tk.Frame(options_window, padx=40, pady=40, bg='#2b2b2b')
-        main_frame.pack(fill='both', expand=True)
+        # Create main container frame
+        container_frame = tk.Frame(options_window, bg='#2b2b2b')
+        container_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Create canvas and scrollbar for scrolling
+        canvas = tk.Canvas(container_frame, bg='#2b2b2b', highlightthickness=0)
+        scrollbar = tk.Scrollbar(container_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#2b2b2b')
+        
+        # Configure scrolling
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Now use scrollable_frame for content
+        main_frame = scrollable_frame
         
         # Title with larger font
         title_label = tk.Label(
             main_frame, 
             text="Select Denoising Method", 
-            font=("Arial", 24, "bold"),
+            font=("Arial", 28, "bold"),
             fg='#ffffff',
             bg='#2b2b2b'
         )
-        title_label.pack(pady=(0, 40))
+        title_label.pack(pady=(20, 30))
         
         # Subtitle
         subtitle_label = tk.Label(
@@ -218,7 +240,8 @@ class PixelProbeApp:
             text="Choose the denoising algorithm that best fits your image type and noise characteristics",
             font=("Arial", 16),
             fg='#cccccc',
-            bg='#2b2b2b'
+            bg='#2b2b2b',
+            wraplength=1000
         )
         subtitle_label.pack(pady=(0, 30))
         
@@ -233,9 +256,9 @@ class PixelProbeApp:
             ("Bilateral Filter (Advanced)", "bilateral", "Edge-preserving smoothing for natural images", "#FF9800"),
         ]
         
-        # Create method selection frame
+        # Create method selection frame - vertical layout
         methods_frame = tk.Frame(main_frame, bg='#2b2b2b')
-        methods_frame.pack(fill='both', expand=True, pady=(0, 40))
+        methods_frame.pack(fill='x', expand=False, pady=(0, 30))
         
         # Store radio button references for styling
         radio_buttons = []
@@ -257,10 +280,11 @@ class PixelProbeApp:
                 bg='#3c3c3c', 
                 relief='raised', 
                 bd=2,
-                padx=25,
-                pady=20
+                padx=20,
+                pady=15
             )
-            method_frame.pack(fill='x', pady=12)
+            # Pack vertically with consistent spacing
+            method_frame.pack(fill='x', pady=8, padx=10)
             method_frames.append((method_frame, value))
             
             # Radio button with larger font
@@ -290,7 +314,7 @@ class PixelProbeApp:
                 wraplength=1000,
                 justify='left'
             )
-            desc_label.pack(anchor='w', padx=(30, 0), pady=(8, 0))
+            desc_label.pack(anchor='w', padx=(30, 0), pady=(5, 0))
         
         def apply_denoising():
             method = method_var.get()
@@ -300,51 +324,69 @@ class PixelProbeApp:
         # Initial styling update
         update_selection_styling()
         
-        # Buttons frame with larger buttons
+        # CustomTkinter buttons with modern styling
         button_frame = tk.Frame(main_frame, bg='#2b2b2b')
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=30, fill='x')
         
-        # Buttons with better styling
-        apply_btn = tk.Button(
-            button_frame, 
-            text="Apply Denoising", 
+        # Apply button with CustomTkinter styling
+        apply_btn = ctk.CTkButton(
+            button_frame,
+            text="Apply Denoising",
             command=apply_denoising,
-            font=("Arial", 18, "bold"), 
-            bg='#4CAF50', 
-            fg='white',
-            activebackground='#45a049',
-            activeforeground='white',
-            padx=50, 
-            pady=20,
-            relief='flat',
-            cursor='hand2'
+            font=ctk.CTkFont(size=18, weight="bold"),
+            height=50,
+            width=200,
+            fg_color="#4CAF50",
+            hover_color="#45a049"
         )
-        apply_btn.pack(side='left', padx=30)
+        apply_btn.pack(side='left', padx=20, expand=True)
         
-        cancel_btn = tk.Button(
-            button_frame, 
+        # Cancel button with CustomTkinter styling  
+        cancel_btn = ctk.CTkButton(
+            button_frame,
             text="Cancel", 
             command=options_window.destroy,
-            font=("Arial", 18, "bold"), 
-            bg='#f44336', 
-            fg='white',
-            activebackground='#da190b',
-            activeforeground='white',
-            padx=50, 
-            pady=20,
-            relief='flat',
-            cursor='hand2'
+            font=ctk.CTkFont(size=18, weight="bold"),
+            height=50,
+            width=200,
+            fg_color="#f44336",
+            hover_color="#da190b"
         )
-        cancel_btn.pack(side='left', padx=30)
+        cancel_btn.pack(side='right', padx=20, expand=True)
+        
+        # Enable mouse wheel scrolling
+        def on_mousewheel(event):
+            # Check if canvas still exists before trying to scroll
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except tk.TclError:
+                # Canvas has been destroyed, unbind the event
+                pass
+        
+        # Bind mouse wheel to canvas specifically, not to all widgets
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        
+        # Cleanup function to properly unbind events when window closes
+        def on_window_close():
+            try:
+                canvas.unbind("<MouseWheel>")
+            except:
+                pass
+            options_window.destroy()
+        
+        # Override the window close event
+        options_window.protocol("WM_DELETE_WINDOW", on_window_close)
         
         # Center the window
         options_window.update_idletasks()
         x = (options_window.winfo_screenwidth() // 2) - (1200 // 2)
-        y = (options_window.winfo_screenheight() // 2) - (800 // 2)
-        options_window.geometry(f"1200x800+{x}+{y}")
+        y = (options_window.winfo_screenheight() // 3) - (1300 // 4)
+        options_window.geometry(f"1200x1300+{x}+{y}")
         
         # Bind variable change to update styling
         method_var.trace('w', lambda *args: update_selection_styling())
+        
     def apply_selected_denoising(self, method):
         """Apply the selected denoising method"""
         if self.current_image is None:
