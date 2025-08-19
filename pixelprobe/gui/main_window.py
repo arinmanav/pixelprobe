@@ -8,6 +8,8 @@ from typing import Dict, Any, Optional
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import tkinter as tk
+from tkinter import ttk
 
 from pixelprobe.utils.config import load_config, ensure_directories
 from pixelprobe.gui.dialogs.file_dialogs import FileDialogs
@@ -100,81 +102,249 @@ class PixelProbeApp:
         except Exception as e:
             self.logger.error(f"Failed to display image: {e}")
             self.update_status("Failed to display image")
-
-    def show_denoise_options(self):
-        """Show denoising method selection dialog"""
-        import tkinter as tk
-        from tkinter import ttk
+    def format_statistics_text(self, basic_stats, quality_metrics):
+        """Format statistics into readable text with better styling"""
+        if not basic_stats:
+            return "❌ No statistics available - please load an image first"
         
-        # Create options window
+        text = f"""
+    📊 IMAGE STATISTICS REPORT
+    {'='*90}
+
+    📐 IMAGE DIMENSIONS & PROPERTIES
+        Shape: {basic_stats.get('shape', 'N/A')}
+        Data Type: {basic_stats.get('dtype', 'N/A')}
+        Channels: {basic_stats.get('channels', 'N/A')}
+        File Size: {basic_stats.get('file_size', 'N/A')} bytes
+
+    📈 STATISTICAL ANALYSIS
+    """
+        
+        if basic_stats.get('channels') == 1:
+            # Grayscale image with enhanced formatting
+            text += f"""
+    🔘 GRAYSCALE IMAGE ANALYSIS
+
+        📊 Central Tendency:
+            Mean Value:           {basic_stats.get('mean', 0):.3f}
+            Median Value:         {basic_stats.get('median', 0):.3f}
+            Mode Value:           {basic_stats.get('mode', 0):.3f}
+        
+        📏 Spread & Distribution:
+            Standard Deviation:   {basic_stats.get('std', 0):.3f}
+            Variance:            {basic_stats.get('variance', 0):.3f}
+            Range (Min-Max):     {basic_stats.get('min', 0):.3f} - {basic_stats.get('max', 0):.3f}
+        
+        📈 Shape Characteristics:
+            Skewness:            {basic_stats.get('skewness', 0):.6f}
+            Kurtosis:            {basic_stats.get('kurtosis', 0):.6f}
+            
+        💾 Information Content:
+            Entropy:             {basic_stats.get('entropy', 0):.6f} bits
+            
+        🎯 INTERPRETATION:
+            {'📊 Well-distributed values' if abs(basic_stats.get('skewness', 0)) < 0.5 else '⚠️  Skewed distribution'}
+            {'📈 Normal peak distribution' if abs(basic_stats.get('kurtosis', 0)) < 3 else '⚠️  Heavy-tailed distribution'}
+            {'💡 High information content' if basic_stats.get('entropy', 0) > 6 else '💡 Low information content'}
+    """
+        else:
+            # Color image with enhanced formatting
+            text += f"""
+    🌈 COLOR IMAGE ANALYSIS
+
+        📊 OVERALL STATISTICS:
+            Mean Intensity:       {basic_stats.get('overall', {}).get('mean', 0):.3f}
+            Standard Deviation:   {basic_stats.get('overall', {}).get('std', 0):.3f}
+            Value Range:          {basic_stats.get('overall', {}).get('min', 0):.3f} - {basic_stats.get('overall', {}).get('max', 0):.3f}
+            Variance:            {basic_stats.get('overall', {}).get('variance', 0):.3f}
+
+        🎨 CHANNEL-BY-CHANNEL ANALYSIS:
+    """
+            
+            # Color-coded channel analysis
+            channel_colors = {'Red': '🔴', 'Green': '🟢', 'Blue': '🔵'}
+            for channel, stats in basic_stats.get('by_channel', {}).items():
+                color_icon = channel_colors.get(channel, '⚪')
+                text += f"""
+        {color_icon} {channel.upper()} CHANNEL:
+            Mean:                {stats.get('mean', 0):.3f}
+            Standard Deviation:  {stats.get('std', 0):.3f}
+            Range:              {stats.get('min', 0):.3f} - {stats.get('max', 0):.3f}
+            Information Content: {stats.get('entropy', 0):.6f} bits
+    """
+        
+        # Add quality summary
+        text += f"""
+
+    🎯 QUALITY SUMMARY:
+        Overall Assessment:   {'🟢 Excellent' if all(basic_stats.get(k, 0) > 0 for k in ['mean', 'std']) else '🟡 Good'}
+        Dynamic Range:        {(basic_stats.get('max', 0) - basic_stats.get('min', 0)):.1f}
+        Contrast Ratio:       {(basic_stats.get('std', 0) / max(basic_stats.get('mean', 1), 1)):.3f}
+
+    {'='*90}
+    """
+        
+        return text
+    def show_denoise_options(self):
+        """Show denoising method selection dialog with improved styling"""
+        
+        # Create options window with larger size
         options_window = tk.Toplevel(self.root)
-        options_window.title("Denoising Options")
-        options_window.geometry("900x600")
+        options_window.title("PixelProbe - Denoising Method Selection")
+        options_window.geometry("800x1200")
         options_window.transient(self.root)
         options_window.grab_set()
         
+        # Configure window background
+        options_window.configure(bg='#2b2b2b')
+        
         # Main frame with padding
-        main_frame = tk.Frame(options_window, padx=30, pady=30)
+        main_frame = tk.Frame(options_window, padx=40, pady=40, bg='#2b2b2b')
         main_frame.pack(fill='both', expand=True)
         
         # Title with larger font
-        title_label = tk.Label(main_frame, text="Select Denoising Method:", 
-                            font=("Arial", 18, "bold"))
-        title_label.pack(pady=(0, 30))
+        title_label = tk.Label(
+            main_frame, 
+            text="Select Denoising Method", 
+            font=("Arial", 24, "bold"),
+            fg='#ffffff',
+            bg='#2b2b2b'
+        )
+        title_label.pack(pady=(0, 40))
+        
+        # Subtitle
+        subtitle_label = tk.Label(
+            main_frame,
+            text="Choose the denoising algorithm that best fits your image type and noise characteristics",
+            font=("Arial", 16),
+            fg='#cccccc',
+            bg='#2b2b2b'
+        )
+        subtitle_label.pack(pady=(0, 30))
         
         method_var = tk.StringVar(value="adaptive")
         methods = [
-            ("Adaptive (Recommended)", "adaptive", "Automatically selects best method"),
-            ("Gaussian Filter (Simple)", "gaus", "Basic blur filter - fast and simple"),
-            ("Median Filter (Simple)", "med", "Removes salt-and-pepper noise"),
-            ("Mean Filter (Simple)", "mean", "Simple averaging filter"),
-            ("Non-Local Means (Advanced)", "nlm", "Excellent for texture preservation"),
-            ("Total Variation (Advanced)", "tv", "Best for smooth images"),
-            ("Bilateral Filter (Advanced)", "bilateral", "Edge-preserving smoothing"),
+            ("Adaptive (Recommended)", "adaptive", "Automatically selects the best method based on image characteristics", "#4CAF50"),
+            ("Gaussian Filter (Simple)", "gaus", "Basic blur filter - fast and simple for general noise reduction", "#2196F3"),
+            ("Median Filter (Simple)", "med", "Excellent for removing salt-and-pepper noise", "#2196F3"),
+            ("Mean Filter (Simple)", "mean", "Simple averaging filter for uniform noise", "#2196F3"),
+            ("Non-Local Means (Advanced)", "nlm", "Superior for texture preservation and complex patterns", "#FF9800"),
+            ("Total Variation (Advanced)", "tv", "Best for smooth images with sharp edges", "#FF9800"),
+            ("Bilateral Filter (Advanced)", "bilateral", "Edge-preserving smoothing for natural images", "#FF9800"),
         ]
         
-        # Create radio buttons with larger fonts
-        for text, value, description in methods:
-            # Frame for each method
-            method_frame = tk.Frame(main_frame)
-            method_frame.pack(fill='x', pady=8)
-            
-            # Radio button
-            radio = tk.Radiobutton(method_frame, text=text, variable=method_var, value=value,
-                                font=("Arial", 14, "bold"))
-            radio.pack(anchor='w')
-            
-            # Description
-            desc_label = tk.Label(method_frame, text=f"   • {description}",
-                                font=("Arial", 12), fg="gray")
-            desc_label.pack(anchor='w', padx=(30, 0), pady=(2, 0))
+        # Create method selection frame
+        methods_frame = tk.Frame(main_frame, bg='#2b2b2b')
+        methods_frame.pack(fill='both', expand=True, pady=(0, 40))
         
-        # Buttons font
-        button_frame = tk.Frame(main_frame)
-        button_frame.pack(pady=40)
+        # Store radio button references for styling
+        radio_buttons = []
+        method_frames = []
+        
+        def update_selection_styling():
+            """Update visual styling based on selection"""
+            selected_value = method_var.get()
+            for frame, value in method_frames:
+                if value == selected_value:
+                    frame.configure(bg='#4a5568', relief='solid', bd=3)
+                else:
+                    frame.configure(bg='#3c3c3c', relief='raised', bd=2)
+        
+        for text, value, description, color in methods:
+            # Frame for each method with better styling
+            method_frame = tk.Frame(
+                methods_frame, 
+                bg='#3c3c3c', 
+                relief='raised', 
+                bd=2,
+                padx=25,
+                pady=20
+            )
+            method_frame.pack(fill='x', pady=12)
+            method_frames.append((method_frame, value))
+            
+            # Radio button with larger font
+            radio = tk.Radiobutton(
+                method_frame, 
+                text=text, 
+                variable=method_var, 
+                value=value,
+                font=("Arial", 18, "bold"),
+                fg=color,
+                bg='#3c3c3c',
+                selectcolor='#4c4c4c',
+                activebackground='#4c4c4c',
+                activeforeground=color,
+                command=lambda: update_selection_styling()
+            )
+            radio.pack(anchor='w')
+            radio_buttons.append((radio, value))
+            
+            # Description with larger font
+            desc_label = tk.Label(
+                method_frame, 
+                text=f"• {description}",
+                font=("Arial", 14),
+                fg='#e0e0e0',
+                bg='#3c3c3c',
+                wraplength=1000,
+                justify='left'
+            )
+            desc_label.pack(anchor='w', padx=(30, 0), pady=(8, 0))
         
         def apply_denoising():
             method = method_var.get()
             options_window.destroy()
             self.apply_selected_denoising(method)
         
-        # Large, prominent buttons
-        apply_btn = tk.Button(button_frame, text="Apply Denoising", command=apply_denoising,
-                            font=("Arial", 14, "bold"), bg='#4CAF50', fg='white',
-                            padx=40, pady=15)
-        apply_btn.pack(side='left', padx=20)
+        # Initial styling update
+        update_selection_styling()
         
-        cancel_btn = tk.Button(button_frame, text="Cancel", command=options_window.destroy,
-                            font=("Arial", 14, "bold"), bg='#f44336', fg='white',
-                            padx=40, pady=15)
-        cancel_btn.pack(side='left', padx=20)
+        # Buttons frame with larger buttons
+        button_frame = tk.Frame(main_frame, bg='#2b2b2b')
+        button_frame.pack(pady=20)
+        
+        # Buttons with better styling
+        apply_btn = tk.Button(
+            button_frame, 
+            text="Apply Denoising", 
+            command=apply_denoising,
+            font=("Arial", 18, "bold"), 
+            bg='#4CAF50', 
+            fg='white',
+            activebackground='#45a049',
+            activeforeground='white',
+            padx=50, 
+            pady=20,
+            relief='flat',
+            cursor='hand2'
+        )
+        apply_btn.pack(side='left', padx=30)
+        
+        cancel_btn = tk.Button(
+            button_frame, 
+            text="Cancel", 
+            command=options_window.destroy,
+            font=("Arial", 18, "bold"), 
+            bg='#f44336', 
+            fg='white',
+            activebackground='#da190b',
+            activeforeground='white',
+            padx=50, 
+            pady=20,
+            relief='flat',
+            cursor='hand2'
+        )
+        cancel_btn.pack(side='left', padx=30)
         
         # Center the window
         options_window.update_idletasks()
-        x = (options_window.winfo_screenwidth() // 2) - (900 // 2)
-        y = (options_window.winfo_screenheight() // 2) - (600 // 2)
-        options_window.geometry(f"900x600+{x}+{y}")
-
+        x = (options_window.winfo_screenwidth() // 2) - (1200 // 2)
+        y = (options_window.winfo_screenheight() // 2) - (800 // 2)
+        options_window.geometry(f"1200x800+{x}+{y}")
+        
+        # Bind variable change to update styling
+        method_var.trace('w', lambda *args: update_selection_styling())
     def apply_selected_denoising(self, method):
         """Apply the selected denoising method"""
         if self.current_image is None:
@@ -469,13 +639,13 @@ class PixelProbeApp:
         self.logger.info("Denoise action triggered")
         
         if self.current_image is None:
-            self.update_status_persistent("No image loaded - please load an image or array data first")
+            self.update_status("No image loaded - please load an image or array data first")
             return
         
         # Show denoising options dialog
         self.show_denoise_options()
     
-    def update_status_persistent(self, message: str):
+    def update_status(self, message: str):
         """Update status with a persistent message that stays longer"""
         self.status_label.configure(text=message)
         self.root.update_idletasks()
@@ -484,152 +654,167 @@ class PixelProbeApp:
         self.root.after(8000, lambda: self.update_status("Ready"))
         
     def show_statistics_window(self, basic_stats, quality_metrics):
-        """Display statistics in a professional window"""
-        import tkinter as tk
-        from tkinter import ttk
+        """Display statistics in a professional window with improved styling"""
         
-        # Create statistics window
+        # Create statistics window with larger size
         stats_window = tk.Toplevel(self.root)
-        stats_window.title("Image Statistics and Analysis")
-        stats_window.geometry("800x600")
+        stats_window.title("PixelProbe - Image Statistics and Analysis")
+        stats_window.geometry("1400x900")
         stats_window.transient(self.root)
+        stats_window.configure(bg='#2b2b2b')
         
         # Center the window
         stats_window.update_idletasks()
-        x = (stats_window.winfo_screenwidth() // 2) - (800 // 2)
-        y = (stats_window.winfo_screenheight() // 2) - (600 // 2)
-        stats_window.geometry(f"800x600+{x}+{y}")
+        x = (stats_window.winfo_screenwidth() // 2) - (1400 // 2)
+        y = (stats_window.winfo_screenheight() // 2) - (900 // 2)
+        stats_window.geometry(f"1400x900+{x}+{y}")
         
-        # Create notebook for tabs
-        notebook = ttk.Notebook(stats_window)
-        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        # Configure ttk style for better appearance
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('Custom.TNotebook', background='#2b2b2b', borderwidth=0)
+        style.configure('Custom.TNotebook.Tab', 
+                    background='#3c3c3c', 
+                    foreground='#ffffff',
+                    padding=[20, 12],
+                    font=('Arial', 14, 'bold'))
+        style.map('Custom.TNotebook.Tab',
+                background=[('selected', '#4a5568'), ('active', '#4c4c4c')],
+                foreground=[('selected', '#ffffff'), ('active', '#ffffff')])
+        
+        # Create notebook for tabs with custom style
+        notebook = ttk.Notebook(stats_window, style='Custom.TNotebook')
+        notebook.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Basic Statistics Tab
-        basic_frame = ttk.Frame(notebook)
-        notebook.add(basic_frame, text="Basic Statistics")
+        basic_frame = tk.Frame(notebook, bg='#2b2b2b')
+        notebook.add(basic_frame, text="📊 Basic Statistics")
         
-        # Create scrollable text widget for basic stats
-        basic_text = tk.Text(basic_frame, font=("Consolas", 12), wrap='word')
+        # Create text widget with scrollbar - simplified approach
+        basic_text = tk.Text(
+            basic_frame,
+            font=("Consolas", 16),
+            wrap='word',
+            bg='#1e1e1e',
+            fg='#e0e0e0',
+            insertbackground='#ffffff',
+            selectbackground='#4a5568',
+            selectforeground='#ffffff',
+            relief='flat',
+            padx=20,
+            pady=20
+        )
         basic_scrollbar = tk.Scrollbar(basic_frame, orient="vertical", command=basic_text.yview)
         basic_text.configure(yscrollcommand=basic_scrollbar.set)
         
-        basic_text.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        # Pack scrollbar and text widget
         basic_scrollbar.pack(side="right", fill="y")
+        basic_text.pack(side="left", fill="both", expand=True, padx=20, pady=20)
         
         # Format and display basic statistics
         stats_text = self.format_statistics_text(basic_stats, quality_metrics)
         basic_text.insert('1.0', stats_text)
-        basic_text.config(state='disabled')  # Make read-only
+        basic_text.config(state='disabled')
         
         # Quality Metrics Tab
-        quality_frame = ttk.Frame(notebook)
-        notebook.add(quality_frame, text="Quality Metrics")
+        quality_frame = tk.Frame(notebook, bg='#2b2b2b')
+        notebook.add(quality_frame, text="🔍 Quality Metrics")
         
-        # Quality metrics display
-        quality_text = tk.Text(quality_frame, font=("Consolas", 14), wrap='word')
+        # Quality metrics display with larger font
+        quality_text = tk.Text(
+            quality_frame, 
+            font=("Consolas", 18), 
+            wrap='word',
+            bg='#1e1e1e',
+            fg='#e0e0e0',
+            insertbackground='#ffffff',
+            selectbackground='#4a5568',
+            selectforeground='#ffffff',
+            relief='flat',
+            padx=30,
+            pady=30
+        )
         quality_scroll = tk.Scrollbar(quality_frame, orient="vertical", command=quality_text.yview)
         quality_text.configure(yscrollcommand=quality_scroll.set)
         
-        quality_text.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+        quality_text.pack(side="left", fill="both", expand=True, padx=20, pady=20)
         quality_scroll.pack(side="right", fill="y")
         
-        # Format quality metrics
+        # Format quality metrics with better styling and larger text
         quality_text_content = f"""
-    IMAGE QUALITY ANALYSIS
-    {'='*50}
+    📈 IMAGE QUALITY ANALYSIS
+    {'='*80}
 
     🔍 SHARPNESS: {quality_metrics.get('sharpness', 0):.2f}
-    Higher values indicate sharper images
+        Higher values indicate sharper images with better edge definition
 
     📊 CONTRAST: {quality_metrics.get('contrast', 0):.2f}
-    RMS contrast measure (higher = more contrast)
+        RMS contrast measure (higher values = more dynamic range)
 
     💡 BRIGHTNESS: {quality_metrics.get('brightness', 0):.2f}
-    Average pixel intensity (0-255)
+        Average pixel intensity across the entire image (0-255 scale)
 
     🔇 NOISE ESTIMATE: {quality_metrics.get('noise_estimate', 0):.4f}
-    Estimated noise level (lower = cleaner)
+        Estimated noise level (lower values = cleaner image)
 
-    {'='*50}
-    QUALITY ASSESSMENT:
+    {'='*80}
+    🎯 QUALITY ASSESSMENT SUMMARY:
 
-    Sharpness: {'Excellent' if quality_metrics.get('sharpness', 0) > 1000 else 'Good' if quality_metrics.get('sharpness', 0) > 500 else 'Poor'}
-    Contrast: {'High' if quality_metrics.get('contrast', 0) > 50 else 'Medium' if quality_metrics.get('contrast', 0) > 25 else 'Low'}
-    Noise Level: {'Low' if quality_metrics.get('noise_estimate', 0) < 2 else 'Medium' if quality_metrics.get('noise_estimate', 0) < 5 else 'High'}
+    Sharpness Level: {'🟢 Excellent' if quality_metrics.get('sharpness', 0) > 1000 else '🟡 Good' if quality_metrics.get('sharpness', 0) > 500 else '🔴 Poor'}
+    Contrast Level: {'🟢 High' if quality_metrics.get('contrast', 0) > 50 else '🟡 Medium' if quality_metrics.get('contrast', 0) > 25 else '🔴 Low'}
+    Noise Level: {'🟢 Low' if quality_metrics.get('noise_estimate', 0) < 2 else '🟡 Medium' if quality_metrics.get('noise_estimate', 0) < 5 else '🔴 High'}
+
+    {'='*80}
+    💡 RECOMMENDATIONS:
+
     """
+        
+        # Add recommendations based on metrics
+        sharpness = quality_metrics.get('sharpness', 0)
+        contrast = quality_metrics.get('contrast', 0)
+        noise = quality_metrics.get('noise_estimate', 0)
+        
+        if sharpness < 500:
+            quality_text_content += "• Consider sharpening filters to enhance edge definition\n"
+        if contrast < 25:
+            quality_text_content += "• Image could benefit from contrast enhancement\n"
+        if noise > 5:
+            quality_text_content += "• Strong denoising recommended before further processing\n"
+        elif noise > 2:
+            quality_text_content += "• Mild denoising may improve image quality\n"
+        
+        if sharpness > 1000 and contrast > 50 and noise < 2:
+            quality_text_content += "• Excellent image quality - minimal processing needed\n"
         
         quality_text.insert('1.0', quality_text_content)
         quality_text.config(state='disabled')
         
         # Histogram Tab
-        histogram_frame = ttk.Frame(notebook)
-        notebook.add(histogram_frame, text="Histogram")
+        histogram_frame = tk.Frame(notebook, bg='#2b2b2b')
+        notebook.add(histogram_frame, text="📈 Histogram")
         
-        # Add histogram plot
+        # Add histogram plot with better styling
         self.create_histogram_plot(histogram_frame)
         
-        # Close button
-        button_frame = tk.Frame(stats_window)
-        button_frame.pack(pady=10)
+        # Close button with better styling
+        button_frame = tk.Frame(stats_window, bg='#2b2b2b')
+        button_frame.pack(pady=20)
         
-        close_btn = tk.Button(button_frame, text="Close", command=stats_window.destroy,
-                            font=("Arial", 12), bg='#2196F3', fg='white',
-                            padx=30, pady=8)
+        close_btn = tk.Button(
+            button_frame, 
+            text="Close Analysis", 
+            command=stats_window.destroy,
+            font=("Arial", 16, "bold"), 
+            bg='#2196F3', 
+            fg='white',
+            activebackground='#1976D2',
+            activeforeground='white',
+            padx=40, 
+            pady=15,
+            relief='flat',
+            cursor='hand2'
+        )
         close_btn.pack()
-
-    def format_statistics_text(self, basic_stats, quality_metrics):
-        """Format statistics into readable text"""
-        if not basic_stats:
-            return "No statistics available"
-        
-        text = f"""
-    IMAGE STATISTICS REPORT
-    {'='*60}
-
-    📐 IMAGE DIMENSIONS
-    Shape: {basic_stats.get('shape', 'N/A')}
-    Data Type: {basic_stats.get('dtype', 'N/A')}
-    Channels: {basic_stats.get('channels', 'N/A')}
-
-    📊 BASIC STATISTICS
-    """
-        
-        if basic_stats.get('channels') == 1:
-            # Grayscale image
-            text += f"""
-    Mean: {basic_stats.get('mean', 0):.2f}
-    Standard Deviation: {basic_stats.get('std', 0):.2f}
-    Minimum: {basic_stats.get('min', 0):.2f}
-    Maximum: {basic_stats.get('max', 0):.2f}
-    Median: {basic_stats.get('median', 0):.2f}
-    Mode: {basic_stats.get('mode', 0):.2f}
-    Variance: {basic_stats.get('variance', 0):.2f}
-    Skewness: {basic_stats.get('skewness', 0):.4f}
-    Kurtosis: {basic_stats.get('kurtosis', 0):.4f}
-    Entropy: {basic_stats.get('entropy', 0):.4f} bits
-    """
-        else:
-            # Color image
-            text += f"""
-    🌈 OVERALL STATISTICS
-    Mean: {basic_stats.get('overall', {}).get('mean', 0):.2f}
-    Standard Deviation: {basic_stats.get('overall', {}).get('std', 0):.2f}
-    Minimum: {basic_stats.get('overall', {}).get('min', 0):.2f}
-    Maximum: {basic_stats.get('overall', {}).get('max', 0):.2f}
-
-    📈 BY CHANNEL
-    """
-            for channel, stats in basic_stats.get('by_channel', {}).items():
-                text += f"""
-    {channel} Channel:
-        Mean: {stats.get('mean', 0):.2f}
-        Std Dev: {stats.get('std', 0):.2f}
-        Min: {stats.get('min', 0):.2f}
-        Max: {stats.get('max', 0):.2f}
-        Entropy: {stats.get('entropy', 0):.4f} bits
-    """
-        
-        return text
 
     def create_histogram_plot(self, parent_frame):
         """Create histogram plot in the statistics window"""
@@ -694,7 +879,7 @@ class PixelProbeApp:
         self.logger.info("Statistics action triggered")
         
         if self.current_image is None:
-            self.update_status_persistent("No image loaded - please load an image or array data first")
+            self.update_status("No image loaded - please load an image or array data first")
             return
         
         self.update_status("Calculating image statistics...")
