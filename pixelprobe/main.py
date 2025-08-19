@@ -1,5 +1,6 @@
 """
 PixelProbe - Main Application Entry Point
+Updated to include ROI functionality
 """
 
 import sys
@@ -30,7 +31,7 @@ def main(config_path: Optional[Path] = None) -> int:
         setup_logging(level=config['log_level'])
         logger = logging.getLogger(__name__)
         
-        logger.info("Starting PixelProbe")
+        logger.info("Starting PixelProbe with ROI functionality")
         
         # Create and run application
         app = PixelProbeApp(config=config)
