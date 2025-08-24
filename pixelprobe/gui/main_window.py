@@ -10,6 +10,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import tkinter as tk
 from tkinter import ttk
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+import matplotlib.patches as patches
 
 from pixelprobe.utils.config import load_config, ensure_directories
 from pixelprobe.gui.dialogs.file_dialogs import FileDialogs
@@ -17,7 +19,7 @@ from pixelprobe.utils.file_io import ArrayLoader, ImageLoader
 from pixelprobe.processing.denoising import AdvancedDenoiseProcessor
 from pixelprobe.analysis.statistics import StatisticalAnalyzer
 from pixelprobe.core.array_handler import ArrayHandler
-from pixelprobe.gui.roi_selector import ROISelector, ROIType
+from pixelprobe.gui.roi_selector import ROISelector, ROIType, ROI
 
 
 class PixelProbeApp:
@@ -87,12 +89,13 @@ class PixelProbeApp:
         
         self.logger.debug(f"Window configured: {width}x{height}")
 
+
     def create_widgets(self):
-        """Create and arrange the main interface widgets"""
+        """Create and arrange the main interface widgets with CustomTkinter compatibility"""
         # Create sidebar frame
         self.sidebar_frame = ctk.CTkFrame(self.root, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(15, weight=1)  # Updated for more rows
+        self.sidebar_frame.grid_rowconfigure(15, weight=1)
         
         # Sidebar title
         self.logo_label = ctk.CTkLabel(
@@ -139,7 +142,7 @@ class PixelProbeApp:
         )
         self.segment_btn.grid(row=5, column=0, padx=20, pady=5)
         
-        # ✅ NEW: ROI Section
+        # ROI Section
         self.roi_label = ctk.CTkLabel(
             self.sidebar_frame,
             text="ROI Selection",
@@ -230,7 +233,7 @@ class PixelProbeApp:
         self.main_frame = ctk.CTkFrame(self.root)
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(20, 20), pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=1)
+        self.main_frame.grid_rowconfigure(2, weight=1)
         
         # Welcome message
         self.welcome_label = ctk.CTkLabel(
@@ -240,22 +243,45 @@ class PixelProbeApp:
         )
         self.welcome_label.grid(row=0, column=0, padx=20, pady=20)
         
-
+        # FIXED: Simple toolbar info frame (no matplotlib toolbar for now)
+        self.toolbar_info_frame = ctk.CTkFrame(self.main_frame, height=40)
+        self.toolbar_info_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+        self.toolbar_info_frame.grid_columnconfigure(1, weight=1)
+        
+        # Zoom instructions
+        self.zoom_instructions_label = ctk.CTkLabel(
+            self.toolbar_info_frame,
+            text="💡 Right-click and drag to pan | Mouse wheel to zoom | Double-click to reset view",
+            font=ctk.CTkFont(size=11)
+        )
+        self.zoom_instructions_label.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        
+        # Zoom info label
+        self.zoom_info_label = ctk.CTkLabel(
+            self.toolbar_info_frame,
+            text="Ready for pixel-level selection",
+            font=ctk.CTkFont(size=11)
+        )
+        self.zoom_info_label.grid(row=0, column=1, padx=10, pady=5, sticky="e")
+        
         # Content area for displaying images/plots
         self.content_frame = ctk.CTkFrame(self.main_frame)
-        self.content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.content_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
-
+        
         # Create matplotlib figure for image display
         self.figure = Figure(figsize=(8, 6), dpi=100)
         self.subplot = self.figure.add_subplot(111)
         self.subplot.set_title("No image loaded")
         self.subplot.axis('off')
-
+        
         # Create canvas widget
         self.canvas = FigureCanvasTkAgg(self.figure, self.content_frame)
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        
+        # FIXED: Enable built-in matplotlib navigation without toolbar widget
+        self.setup_manual_navigation()
         
         # Status bar
         self.status_label = ctk.CTkLabel(
@@ -265,7 +291,223 @@ class PixelProbeApp:
         )
         self.status_label.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 10))
         
-        self.logger.debug("Main interface widgets created")
+        # Set up zoom tracking
+        self.setup_zoom_tracking()
+        
+        self.logger.debug("Main interface widgets created with manual navigation")
+
+    def get_roi_statistics(self):
+        """Get statistics for all current ROIs with debug info"""
+        print(f"DEBUG: ROI selector exists: {self.roi_selector is not None}")
+        print(f"DEBUG: Current image exists: {self.current_image is not None}")
+        
+        if self.roi_selector:
+            print(f"DEBUG: Number of ROIs: {len(self.roi_selector.rois)}")
+            for i, roi in enumerate(self.roi_selector.rois):
+                print(f"DEBUG: ROI {i}: {roi.label}, type: {roi.roi_type}")
+        
+        if self.roi_selector and self.current_image is not None:
+            roi_stats = self.roi_selector.get_roi_statistics(self.current_image)
+            print(f"DEBUG: ROI stats returned: {roi_stats}")
+            return roi_stats
+        
+        print("DEBUG: Returning empty dict")
+        return {}
+
+    def set_rectangle_roi(self):
+        """Set ROI selection to rectangle mode"""
+        if self.roi_selector and self.roi_mode_active:
+            self.roi_selector.set_roi_type(ROIType.RECTANGLE)
+            self._update_roi_button_colors("rectangle")
+
+    def set_circle_roi(self):
+        """Set ROI selection to circle mode"""
+        if self.roi_selector and self.roi_mode_active:
+            self.roi_selector.set_roi_type(ROIType.CIRCLE)
+            self._update_roi_button_colors("circle")
+
+    def set_point_roi(self):
+        """Set ROI selection to point mode"""
+        if self.roi_selector and self.roi_mode_active:
+            self.roi_selector.set_roi_type(ROIType.POINT)
+            self._update_roi_button_colors("point")
+
+    def _update_roi_button_colors(self, active_type):
+        """Update ROI button colors to show active selection"""
+        default_color = ["#1f538d", "#14375e"]
+        
+        self.roi_rect_btn.configure(fg_color=default_color)
+        self.roi_circle_btn.configure(fg_color=default_color)
+        self.roi_point_btn.configure(fg_color=default_color)
+        
+        active_color = ["#ff6b35", "#e85a31"]
+        if active_type == "rectangle":
+            self.roi_rect_btn.configure(fg_color=active_color)
+        elif active_type == "circle":
+            self.roi_circle_btn.configure(fg_color=active_color)
+        elif active_type == "point":
+            self.roi_point_btn.configure(fg_color=active_color)
+
+    def clear_rois(self):
+        """Clear all ROIs"""
+        if self.roi_selector:
+            self.roi_selector.clear_rois()
+            if self.current_image is not None:
+                current_title = self.subplot.get_title()
+                self.display_image(self.current_image, current_title)
+            self.update_status("All ROIs cleared and display refreshed")
+
+    def _deactivate_roi_mode(self):
+        """Deactivate ROI selection mode"""
+        if self.roi_selector:
+            self.roi_selector.deactivate_selection()
+        
+        self.roi_mode_active = False
+        
+        self.roi_mode_btn.configure(text="Enable ROI Mode", fg_color="gray")
+        self.roi_rect_btn.configure(state="disabled")
+        self.roi_circle_btn.configure(state="disabled")
+        self.roi_point_btn.configure(state="disabled")
+        self.roi_clear_btn.configure(state="disabled")
+        
+        self.update_status("ROI mode deactivated")
+
+    def setup_manual_navigation(self):
+        """Set up manual navigation using matplotlib's built-in features"""
+        
+        # Enable matplotlib's built-in pan and zoom
+        def on_key_press(event):
+            """Handle keyboard shortcuts for navigation"""
+            if event.key == 'r':  # Reset view
+                self.subplot.set_xlim(auto=True)
+                self.subplot.set_ylim(auto=True)
+                self.canvas.draw()
+            elif event.key == 'h':  # Home/fit view
+                if self.current_image is not None:
+                    self.subplot.set_xlim(0, self.current_image.shape[1])
+                    self.subplot.set_ylim(self.current_image.shape[0], 0)
+                    self.canvas.draw()
+        
+        def on_scroll(event):
+            """Handle mouse wheel zooming"""
+            if event.inaxes != self.subplot:
+                return
+            
+            if self.current_image is None:
+                return
+                
+            # Get current axis limits
+            xlim = self.subplot.get_xlim()
+            ylim = self.subplot.get_ylim()
+            
+            # Calculate zoom center (mouse position)
+            xdata, ydata = event.xdata, event.ydata
+            if xdata is None or ydata is None:
+                return
+            
+            # Zoom factor
+            zoom_factor = 1.2 if event.button == 'up' else 1/1.2
+            
+            # Calculate new limits
+            x_range = (xlim[1] - xlim[0]) / zoom_factor
+            y_range = (ylim[1] - ylim[0]) / zoom_factor
+            
+            # Center zoom on mouse position
+            new_xlim = [xdata - x_range/2, xdata + x_range/2]
+            new_ylim = [ydata - y_range/2, ydata + y_range/2]
+            
+            # Apply limits
+            self.subplot.set_xlim(new_xlim)
+            self.subplot.set_ylim(new_ylim)
+            self.canvas.draw()
+        
+        def on_button_press(event):
+            """Start panning"""
+            if event.button == 3:  # Right mouse button
+                self.pan_start = (event.xdata, event.ydata)
+                self.canvas.get_tk_widget().configure(cursor="fleur")
+        
+        def on_button_release(event):
+            """Stop panning"""
+            if event.button == 3:  # Right mouse button
+                self.pan_start = None
+                self.canvas.get_tk_widget().configure(cursor="")
+        
+        def on_motion(event):
+            """Handle panning motion"""
+            if hasattr(self, 'pan_start') and self.pan_start and event.inaxes == self.subplot:
+                if self.current_image is None:
+                    return
+                    
+                dx = self.pan_start[0] - event.xdata
+                dy = self.pan_start[1] - event.ydata
+                
+                xlim = self.subplot.get_xlim()
+                ylim = self.subplot.get_ylim()
+                
+                self.subplot.set_xlim([xlim[0] + dx, xlim[1] + dx])
+                self.subplot.set_ylim([ylim[0] + dy, ylim[1] + dy])
+                self.canvas.draw_idle()
+        
+        def on_double_click(event):
+            """Reset zoom on double click"""
+            if event.dblclick and event.inaxes == self.subplot:
+                if self.current_image is not None:
+                    self.subplot.set_xlim(0, self.current_image.shape[1])
+                    self.subplot.set_ylim(self.current_image.shape[0], 0)
+                    self.canvas.draw()
+        
+        # Connect events
+        self.figure.canvas.mpl_connect('key_press_event', on_key_press)
+        self.figure.canvas.mpl_connect('scroll_event', on_scroll)
+        self.figure.canvas.mpl_connect('button_press_event', on_button_press)
+        self.figure.canvas.mpl_connect('button_release_event', on_button_release)
+        self.figure.canvas.mpl_connect('motion_notify_event', on_motion)
+        self.figure.canvas.mpl_connect('button_press_event', on_double_click)
+        
+        # Make the canvas focusable for keyboard events
+        self.canvas.get_tk_widget().focus_set()
+
+    def setup_zoom_tracking(self):
+        """Set up zoom level tracking and pixel-level precision"""
+        def on_xlims_change(axes):
+            """Track zoom changes and update info"""
+            try:
+                xlim = axes.get_xlim()
+                ylim = axes.get_ylim()
+                
+                if self.current_image is not None:
+                    # Calculate zoom level
+                    img_width = self.current_image.shape[1]
+                    img_height = self.current_image.shape[0]
+                    
+                    view_width = abs(xlim[1] - xlim[0])
+                    view_height = abs(ylim[1] - ylim[0])
+                    
+                    zoom_x = img_width / view_width if view_width > 0 else 1
+                    zoom_y = img_height / view_height if view_height > 0 else 1
+                    zoom_level = min(zoom_x, zoom_y)
+                    
+                    # Update zoom info
+                    if hasattr(self, 'zoom_info_label'):
+                        if zoom_level > 10:  # When each pixel is > 10 screen pixels
+                            self.zoom_info_label.configure(
+                                text=f"🔍 Zoom: {zoom_level:.1f}x | PIXEL-LEVEL - Perfect for precise selection!"
+                            )
+                        elif zoom_level > 2:
+                            self.zoom_info_label.configure(
+                                text=f"🔍 Zoom: {zoom_level:.1f}x | Good resolution for ROI selection"
+                            )
+                        else:
+                            self.zoom_info_label.configure(
+                                text=f"🔍 Zoom: {zoom_level:.1f}x | Zoom in more for pixel precision"
+                            )
+            except Exception as e:
+                self.logger.debug(f"Zoom tracking error: {e}")
+        
+        # Connect zoom tracking
+        self.subplot.callbacks.connect('xlim_changed', on_xlims_change)
+        self.subplot.callbacks.connect('ylim_changed', on_xlims_change)
 
     # ✅ NEW: ROI-related methods
     def toggle_roi_mode(self):
@@ -321,6 +563,8 @@ class PixelProbeApp:
         self.update_status("ROI mode deactivated")
         self.logger.info("ROI mode deactivated")
 
+    # Add these methods to your PixelProbeApp class in main_window.py
+
     def set_rectangle_roi(self):
         """Set ROI selection to rectangle mode"""
         if self.roi_selector and self.roi_mode_active:
@@ -342,13 +586,14 @@ class PixelProbeApp:
     def _update_roi_button_colors(self, active_type):
         """Update ROI button colors to show active selection"""
         # Reset all to default color
-        default_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
+        default_color = ["#1f538d", "#14375e"]  # CustomTkinter default colors
+        
         self.roi_rect_btn.configure(fg_color=default_color)
         self.roi_circle_btn.configure(fg_color=default_color)
         self.roi_point_btn.configure(fg_color=default_color)
         
         # Highlight active button
-        active_color = "orange"
+        active_color = ["#ff6b35", "#e85a31"]  # Orange highlight
         if active_type == "rectangle":
             self.roi_rect_btn.configure(fg_color=active_color)
         elif active_type == "circle":
@@ -360,42 +605,248 @@ class PixelProbeApp:
         """Clear all ROIs"""
         if self.roi_selector:
             self.roi_selector.clear_rois()
-            # Redisplay the image to refresh the plot
+            # Redisplay the image to remove visual ROI elements
             if self.current_image is not None:
-                self.display_image(self.current_image, self.subplot.get_title())
+                current_title = self.subplot.get_title()
+                self.display_image(self.current_image, current_title)
+            
+            self.update_status("All ROIs cleared and display refreshed")
 
-    def get_roi_statistics(self):
-        """Get statistics for all current ROIs"""
-        if self.roi_selector and self.current_image is not None:
-            return self.roi_selector.get_roi_statistics(self.current_image)
-        return {}
-
-    # Existing methods (unchanged)
-    def display_image(self, image_array, title="Loaded Image"):
-        """Display image in the main content area"""
+    def _redraw_roi_visual(self, roi):
+        """Redraw a single ROI visual element"""
         try:
+            if roi.roi_type == ROIType.RECTANGLE:
+                rect = patches.Rectangle(
+                    (roi.coordinates['x'], roi.coordinates['y']),
+                    roi.coordinates['width'],
+                    roi.coordinates['height'],
+                    fill=False,
+                    edgecolor=roi.color,
+                    linewidth=2.0,
+                    alpha=0.8
+                )
+                self.subplot.add_patch(rect)
+            
+            elif roi.roi_type == ROIType.CIRCLE:
+                circle = patches.Circle(
+                    (roi.coordinates['cx'], roi.coordinates['cy']),
+                    roi.coordinates['radius'],
+                    fill=False,
+                    edgecolor=roi.color,
+                    linewidth=2.0,
+                    alpha=0.8
+                )
+                self.subplot.add_patch(circle)
+            
+            elif roi.roi_type == ROIType.POINT:
+                # Enhanced point visualization
+                self.subplot.plot(
+                    roi.coordinates['x'],
+                    roi.coordinates['y'],
+                    marker='+',
+                    color=roi.color,
+                    markersize=12,
+                    markeredgewidth=3,
+                    alpha=0.9
+                )
+                # Add pixel coordinates as text annotation
+                self.subplot.annotate(
+                    f"({int(roi.coordinates['x'])}, {int(roi.coordinates['y'])})",
+                    (roi.coordinates['x'], roi.coordinates['y']),
+                    xytext=(10, 10), textcoords='offset points',
+                    fontsize=9, color=roi.color,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
+                )
+            
+            elif roi.roi_type == ROIType.MULTI_POINT:
+                # Visualize multiple points
+                for i, point in enumerate(roi.coordinates['points']):
+                    self.subplot.plot(
+                        point['x'], point['y'],
+                        marker='o',
+                        color=roi.color,
+                        markersize=10,
+                        markeredgewidth=2,
+                        markerfacecolor='none',
+                        alpha=0.9
+                    )
+                    # Add point number
+                    self.subplot.annotate(
+                        f"{i+1}",
+                        (point['x'], point['y']),
+                        xytext=(5, 5), textcoords='offset points',
+                        fontsize=8, color=roi.color,
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
+                    )
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to redraw ROI visual: {e}")
+
+    def display_image(self, image_array, title="Loaded Image"):
+        """Enhanced image display with ROI persistence and zoom tracking"""
+        try:
+            # Store current zoom/view limits before clearing
+            current_xlim = None
+            current_ylim = None
+            if hasattr(self, 'subplot') and self.subplot.get_xlim() != (0.0, 1.0):
+                current_xlim = self.subplot.get_xlim()
+                current_ylim = self.subplot.get_ylim()
+            
+            # Store current ROIs to redraw them
+            current_rois = []
+            if self.roi_selector:
+                current_rois = self.roi_selector.rois.copy()
+            
+            # Clear and redraw image
             self.subplot.clear()
             
             if len(image_array.shape) == 2:
-                # Grayscale image
-                self.subplot.imshow(image_array, cmap='gray')
+                # Grayscale image with proper interpolation for pixel-level viewing
+                im = self.subplot.imshow(
+                    image_array, 
+                    cmap='gray', 
+                    interpolation='nearest',  # Sharp pixels when zoomed
+                    aspect='equal'  # Maintain pixel aspect ratio
+                )
             else:
                 # Color image
-                self.subplot.imshow(image_array)
-                
+                im = self.subplot.imshow(
+                    image_array, 
+                    interpolation='nearest',
+                    aspect='equal'
+                )
+            
             self.subplot.set_title(title)
-            self.subplot.axis('off')
+            
+            # Restore zoom if it was previously set
+            if current_xlim is not None and current_ylim is not None:
+                self.subplot.set_xlim(current_xlim)
+                self.subplot.set_ylim(current_ylim)
+            else:
+                # Set proper initial view
+                self.subplot.set_xlim(0, image_array.shape[1])
+                self.subplot.set_ylim(image_array.shape[0], 0)
+            
+            # Redraw all ROIs
+            if current_rois:
+                for roi in current_rois:
+                    self._redraw_roi_visual(roi)
+            
             self.canvas.draw()
+            
+            # Make canvas focusable for keyboard events (needed for multi-point)
+            self.canvas.get_tk_widget().focus_set()
             
             # Reinitialize ROI selector if in ROI mode
             if self.roi_mode_active and self.roi_selector:
                 self.roi_selector.figure = self.figure
                 self.roi_selector.subplot = self.subplot
+                # Restore the ROIs list
+                self.roi_selector.rois = current_rois
             
             self.logger.info(f"Displayed image with shape {image_array.shape}")
+            
+            # Update zoom info
+            if hasattr(self, 'zoom_info_label'):
+                self.zoom_info_label.configure(text="Image loaded - Use mouse wheel to zoom")
+            
         except Exception as e:
             self.logger.error(f"Failed to display image: {e}")
             self.update_status("Failed to display image")
+
+    def _redraw_roi_visual(self, roi: ROI):
+        """Redraw a single ROI visual element"""
+        try:
+            if roi.roi_type == ROIType.RECTANGLE:
+                rect = patches.Rectangle(
+                    (roi.coordinates['x'], roi.coordinates['y']),
+                    roi.coordinates['width'],
+                    roi.coordinates['height'],
+                    fill=False,
+                    edgecolor=roi.color,
+                    linewidth=roi.linewidth,
+                    alpha=0.8
+                )
+                self.subplot.add_patch(rect)
+            
+            elif roi.roi_type == ROIType.CIRCLE:
+                circle = patches.Circle(
+                    (roi.coordinates['cx'], roi.coordinates['cy']),
+                    roi.coordinates['radius'],
+                    fill=False,
+                    edgecolor=roi.color,
+                    linewidth=roi.linewidth,
+                    alpha=0.8
+                )
+                self.subplot.add_patch(circle)
+            
+            elif roi.roi_type == ROIType.POINT:
+                # Enhanced point visualization
+                self.subplot.plot(
+                    roi.coordinates['x'],
+                    roi.coordinates['y'],
+                    marker='+',
+                    color=roi.color,
+                    markersize=12,
+                    markeredgewidth=3,
+                    markerfacecolor='none',
+                    alpha=0.9
+                )
+                # Add pixel coordinates as text annotation
+                self.subplot.annotate(
+                    f"({int(roi.coordinates['x'])}, {int(roi.coordinates['y'])})",
+                    (roi.coordinates['x'], roi.coordinates['y']),
+                    xytext=(10, 10), textcoords='offset points',
+                    fontsize=9, color=roi.color,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
+                )
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to redraw ROI visual: {e}")
+
+    # Enhanced ROI clearing method
+    def clear_rois(self):
+        """Enhanced ROI clearing with proper visual cleanup"""
+        if self.roi_selector:
+            self.roi_selector.clear_rois()
+            
+            # Redisplay the image to remove visual ROI elements
+            if self.current_image is not None:
+                # Get current title
+                current_title = self.subplot.get_title()
+                # Redisplay without ROIs
+                self.display_image(self.current_image, current_title)
+            
+            self.update_status("All ROIs cleared and display refreshed")
+
+    # Enhanced statistics display for point ROIs  
+    def format_point_roi_stats(self, roi_name, roi_data, basic_stats):
+        """Format point ROI statistics with enhanced detail"""
+        if 'error' in roi_data:
+            return f"""
+        ❌ {roi_name.upper()}:
+            Status: {roi_data['error']}
+            Coordinates: {roi_data.get('coordinates', 'Unknown')}
+        """
+        
+        x_coord = roi_data.get('x_coord', 'N/A')
+        y_coord = roi_data.get('y_coord', 'N/A') 
+        pixel_value = roi_data.get('pixel_value', 0)
+        
+        # Calculate percentile within image
+        percentile = self._calculate_percentile(pixel_value, basic_stats)
+        
+        return f"""
+        📍 {roi_name.upper()}:
+            Type: Single Pixel Selection
+            Pixel Coordinates: ({x_coord}, {y_coord})
+            Pixel Value: {pixel_value:.3f}
+            Image Percentile: {percentile:.1f}%
+            
+            🎯 Analysis:
+            Value Classification: {'High' if percentile > 75 else 'Medium' if percentile > 25 else 'Low'}
+            Relative Position: {'Bright region' if percentile > 75 else 'Dark region' if percentile < 25 else 'Mid-tone region'}
+        """
 
     def load_data_action(self):
         """Handle load data button click"""
