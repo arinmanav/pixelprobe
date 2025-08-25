@@ -46,6 +46,8 @@ class PixelProbeApp:
         self.roi_selector = None
         self.roi_mode_active = False
 
+        self.camera_roll = None  # Will be created when needed
+
         # Cleanup tracking
         self.scheduled_callbacks = []
         self.is_closing = False
@@ -233,7 +235,7 @@ class PixelProbeApp:
         # Welcome message
         self.welcome_label = ctk.CTkLabel(
             self.main_frame,
-            text="Welcome to PixelProbe",
+            text="PixelProbe",
             font=ctk.CTkFont(size=24, weight="bold")
         )
         self.welcome_label.grid(row=0, column=0, padx=20, pady=20)
@@ -1101,12 +1103,15 @@ class PixelProbeApp:
         self._load_selected_arrays(selected_items, operation)
     
     def _load_selected_arrays(self, selected_items, operation):
-        """Load the selected arrays"""
+        """Enhanced version with camera roll for multiple items"""
         try:
             self.update_status(f"Loading {len(selected_items)} items...")
             
             if operation == "single":
-                # Load single item
+                # Single item (hide camera roll)
+                if hasattr(self, 'camera_roll') and self.camera_roll:
+                    self.camera_roll._hide_camera_roll()
+                    
                 item_num = selected_items[0]
                 array_data = self.array_handler.load_item(item_num)
                 
@@ -1119,20 +1124,26 @@ class PixelProbeApp:
                     self.update_status(f"Failed to load item {item_num}")
             
             elif operation == "multiple":
-                # Load multiple items - display first one
+                # Multiple items - show camera roll
                 arrays = self.array_handler.load_multiple_items(selected_items)
                 
                 if arrays:
-                    first_item = min(arrays.keys())
-                    self.current_array = arrays[first_item]
-                    self.current_image = self._array_to_display_image(arrays[first_item])
-                    self.display_image(self.current_image, f"Multiple Items (showing {first_item})")
-                    self.update_status(f"Loaded {len(arrays)} items - Displaying item {first_item}")
+                    # Create camera roll if needed
+                    if not hasattr(self, 'camera_roll') or not self.camera_roll:
+                        from pixelprobe.gui.camera_roll import CameraRollInterface
+                        self.camera_roll = CameraRollInterface(self)
+                    
+                    # Load into camera roll
+                    self.camera_roll.load_multiple_frames(arrays)
+                    self.update_status(f"Loaded {len(arrays)} frames - Navigate with ← → keys or thumbnails")
                 else:
                     self.update_status("Failed to load any items")
             
             elif operation == "average":
-                # Average multiple items
+                # Average (hide camera roll)
+                if hasattr(self, 'camera_roll') and self.camera_roll:
+                    self.camera_roll._hide_camera_roll()
+                    
                 averaged_array = self.array_handler.average_items(selected_items)
                 
                 if averaged_array is not None:
