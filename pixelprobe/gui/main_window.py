@@ -4,7 +4,7 @@ Main window for PixelProbe application - Updated with ROI functionality
 import customtkinter as ctk
 import logging
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -112,7 +112,7 @@ class PixelProbeApp:
         # Create sidebar frame
         self.sidebar_frame = ctk.CTkFrame(self.root, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(15, weight=1)
+        self.sidebar_frame.grid_rowconfigure(17, weight=1)  # Updated for additional button
         
         # Sidebar title
         self.logo_label = ctk.CTkLabel(
@@ -166,13 +166,25 @@ class PixelProbeApp:
         )
         self.interpolation_btn.grid(row=6, column=0, padx=20, pady=5)
         
-        # ROI Section
+        # NEW: Add Undo button right after interpolation
+        self.undo_btn = ctk.CTkButton(
+            self.sidebar_frame,
+            text="Undo Interpolation",
+            command=self.undo_interpolation,
+            state="disabled",  # Initially disabled
+            fg_color="#FF9800",  # Orange color for undo
+            hover_color="#F57C00",
+            width=120
+        )
+        self.undo_btn.grid(row=7, column=0, padx=20, pady=2)
+        
+        # ROI Section - UPDATED ROW NUMBERS (+1 from original)
         self.roi_label = ctk.CTkLabel(
             self.sidebar_frame,
             text="ROI Selection",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.roi_label.grid(row=7, column=0, padx=20, pady=(20, 10)) 
+        self.roi_label.grid(row=8, column=0, padx=20, pady=(20, 10))  # Was row=7, now row=8
         
         # ROI mode toggle
         self.roi_mode_btn = ctk.CTkButton(
@@ -181,9 +193,9 @@ class PixelProbeApp:
             command=self.toggle_roi_mode,
             fg_color="gray"
         )
-        self.roi_mode_btn.grid(row=7, column=0, padx=20, pady=5)
+        self.roi_mode_btn.grid(row=9, column=0, padx=20, pady=5)  # Was row=8, now row=9
         
-        # ROI selection buttons - CIRCLE REMOVED
+        # ROI selection buttons
         self.roi_rect_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Rectangle",
@@ -191,7 +203,7 @@ class PixelProbeApp:
             state="disabled",
             width=120
         )
-        self.roi_rect_btn.grid(row=8, column=0, padx=20, pady=2)
+        self.roi_rect_btn.grid(row=10, column=0, padx=20, pady=2)  # Was row=9, now row=10
         
         self.roi_point_btn = ctk.CTkButton(
             self.sidebar_frame,
@@ -200,7 +212,7 @@ class PixelProbeApp:
             state="disabled",
             width=120
         )
-        self.roi_point_btn.grid(row=9, column=0, padx=20, pady=2)
+        self.roi_point_btn.grid(row=11, column=0, padx=20, pady=2)  # Was row=10, now row=11
         
         # ROI management buttons
         self.roi_clear_btn = ctk.CTkButton(
@@ -212,7 +224,7 @@ class PixelProbeApp:
             fg_color="red",
             hover_color="darkred"
         )
-        self.roi_clear_btn.grid(row=10, column=0, padx=20, pady=5)
+        self.roi_clear_btn.grid(row=12, column=0, padx=20, pady=5)  # Was row=11, now row=12
         
         # Analysis section
         self.analysis_label = ctk.CTkLabel(
@@ -220,21 +232,21 @@ class PixelProbeApp:
             text="Analysis",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.analysis_label.grid(row=12, column=0, padx=20, pady=(20, 10))
+        self.analysis_label.grid(row=13, column=0, padx=20, pady=(20, 10))  # Was row=12, now row=13
         
         self.plot_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Plot Data",
             command=self.plot_action
         )
-        self.plot_btn.grid(row=13, column=0, padx=20, pady=5)
+        self.plot_btn.grid(row=14, column=0, padx=20, pady=5)  # Was row=13, now row=14
         
         self.stats_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Statistics", 
             command=self.stats_action
         )
-        self.stats_btn.grid(row=14, column=0, padx=20, pady=5)
+        self.stats_btn.grid(row=15, column=0, padx=20, pady=5)  # Was row=14, now row=15
         
         # Theme toggle
         self.theme_btn = ctk.CTkButton(
@@ -242,7 +254,7 @@ class PixelProbeApp:
             text="Toggle Theme",
             command=self.toggle_theme
         )
-        self.theme_btn.grid(row=16, column=0, padx=20, pady=10)
+        self.theme_btn.grid(row=17, column=0, padx=20, pady=10)  # Was row=16, now row=17
         
         # Main content area
         self.main_frame = ctk.CTkFrame(self.root)
@@ -1448,189 +1460,519 @@ class PixelProbeApp:
         self.update_status("Segmentation not yet implemented")
 
     def interpolation_action(self):
-            """Handle interpolation button click - show options dialog"""
-            self.logger.info("Interpolation action triggered")
-            
-            if self.current_image is None:
-                self.update_status("No image loaded - please load an image or array data first")
-                return
-            
-            # Show interpolation options dialog
-            self.show_interpolation_options()
-
-    def apply_interpolation_method(self, method: str, roi_only: bool, all_frames: bool, dialog_window):
-            """Apply the selected interpolation method - SIMPLE AND WORKING"""
-            validated_method = self.interpolator.apply_interpolation_method(method)
-            
-            # Update current interpolation setting
-            self.current_display_interpolation = validated_method
-            
-            # Update title to show interpolation method
-            current_title = getattr(self, 'current_title', 'Image')
-            if ' (' in current_title and current_title.endswith(')'):
-                current_title = current_title.split(' (')[0]
-            
-            new_title = f"{current_title} ({validated_method})"
-            self.current_title = new_title
-            
-            # Refresh the display with new interpolation - THIS PRESERVES ROIS
-            if self.current_image is not None:
-                self.display_image(self.current_image, new_title)
-            
-            self.update_status(f"Applied {validated_method} interpolation")
-            dialog_window.destroy()
-    
-    
+        """Handle interpolation button click - show options dialog"""
+        self.logger.info("Interpolation action triggered")
+        
+        if self.current_image is None:
+            self.update_status("No image loaded - please load an image or array data first")
+            return
+        
+        # Show interpolation options dialog
+        self.show_interpolation_options()
 
     def show_interpolation_options(self):
-            """Show interpolation method selection dialog with unified method list"""
-            # Create dialog window
-            options_window = ctk.CTkToplevel(self.root)
-            options_window.title("Interpolation Methods")
-            options_window.grab_set()  # Make dialog modal
+        """Show interpolation method selection dialog with properly sized sections"""
+        # Create dialog window
+        options_window = ctk.CTkToplevel(self.root)
+        options_window.title("Interpolation Methods")
+        options_window.grab_set()  # Make dialog modal
+        
+        # Configure window - TALLER to fit everything
+        options_window.geometry("550x950")
+        options_window.resizable(True, True)  # Allow resizing
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(options_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="Select Interpolation Method",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title_label.pack(pady=(10, 20))
+        
+        # Description
+        desc_label = ctk.CTkLabel(
+            main_frame,
+            text="Choose from all available matplotlib interpolation methods:",
+            font=ctk.CTkFont(size=14),
+            text_color="gray"
+        )
+        desc_label.pack(pady=(0, 15))
+        
+        # Method selection
+        method_var = tk.StringVar(value=self.current_display_interpolation)
+        methods = self.interpolator.get_interpolation_methods()
+        
+        # Create scrollable frame for methods - SMALLER HEIGHT
+        scrollable_frame = ctk.CTkScrollableFrame(main_frame, width=500, height=350)  # Reduced from 550 to 350
+        scrollable_frame.pack(pady=10, padx=20, fill="x")  # Changed from fill="both", expand=True
+        
+        # Method descriptions for user understanding
+        method_descriptions = {
+            'none': "No interpolation - raw pixels",
+            'nearest': "Nearest neighbor - sharp, pixelated", 
+            'bilinear': "Linear interpolation - smooth",
+            'bicubic': "Cubic interpolation - very smooth",
+            'spline16': "16-element spline interpolation",
+            'spline36': "36-element spline interpolation", 
+            'hanning': "Hanning windowed interpolation",
+            'hamming': "Hamming windowed interpolation",
+            'hermite': "Hermite interpolation",
+            'kaiser': "Kaiser windowed interpolation",
+            'quadric': "Quadratic interpolation",
+            'catrom': "Catmull-Rom interpolation",
+            'gaussian': "Gaussian interpolation",
+            'bessel': "Bessel interpolation",
+            'mitchell': "Mitchell interpolation",
+            'sinc': "Sinc interpolation - high quality",
+            'lanczos': "Lanczos interpolation - very high quality",
+            'antialiased': "Antialiased interpolation",
+            'auto': "Automatic selection by matplotlib"
+        }
+        
+        # Create radio buttons for each method - COMPACT LAYOUT
+        for method in methods:
+            method_frame = ctk.CTkFrame(scrollable_frame)
+            method_frame.pack(fill="x", padx=5, pady=2)  # Reduced padding
             
-            # Configure window - TALLER, NOT WIDER
-            options_window.geometry("550x900")
-            options_window.resizable(True, True)  # Allow resizing
-            
-            # Main frame
-            main_frame = ctk.CTkFrame(options_window)
-            main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-            
-            # Title
-            title_label = ctk.CTkLabel(
-                main_frame,
-                text="Select Interpolation Method",
-                font=ctk.CTkFont(size=20, weight="bold")
+            # Radio button
+            radio = ctk.CTkRadioButton(
+                method_frame,
+                text=f"{method}",
+                variable=method_var,
+                value=method,
+                font=ctk.CTkFont(size=12, weight="bold")  # Smaller font
             )
-            title_label.pack(pady=(10, 20))
+            radio.pack(anchor="w", padx=10, pady=4)  # Reduced padding
             
-            # Description
+            # Description - more compact
+            desc = method_descriptions.get(method, "Matplotlib interpolation method")
             desc_label = ctk.CTkLabel(
-                main_frame,
-                text="Choose from all available matplotlib interpolation methods:",
-                font=ctk.CTkFont(size=14),
+                method_frame,
+                text=desc,
+                font=ctk.CTkFont(size=10),  # Smaller description font
                 text_color="gray"
             )
-            desc_label.pack(pady=(0, 15))
+            desc_label.pack(anchor="w", padx=25, pady=(0, 4))  # Reduced padding
+        
+        # Options frame - FIXED HEIGHT
+        options_frame = ctk.CTkFrame(main_frame, height=180)  # Fixed height
+        options_frame.pack(fill="x", padx=20, pady=15)
+        options_frame.pack_propagate(False)  # Prevent frame from shrinking
+        
+        # Add title for options section
+        options_title = ctk.CTkLabel(
+            options_frame,
+            text="Application Options",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        options_title.pack(pady=(10, 8))
+        
+        # ROI only option
+        roi_only_var = tk.BooleanVar(value=False)
+        roi_check = ctk.CTkCheckBox(
+            options_frame,
+            text="Apply to ROI only (if ROI selected)",
+            variable=roi_only_var
+        )
+        roi_check.pack(pady=3)
+        
+        # Apply to all loaded frames option
+        all_frames_var = tk.BooleanVar(value=False)
+        all_frames_check = ctk.CTkCheckBox(
+            options_frame,
+            text=f"Apply to all loaded frames ({len(self.current_items) if self.current_items else 0} frames)",
+            variable=all_frames_var
+        )
+        all_frames_check.pack(pady=3)
+        
+        # Disable if no multiple frames loaded
+        if not self.current_items or len(self.current_items) <= 1:
+            all_frames_check.configure(state="disabled")
+        
+        # NEW: Modify pixel data option
+        modify_data_var = tk.BooleanVar(value=False)
+        modify_data_check = ctk.CTkCheckBox(
+            options_frame,
+            text="Modify pixel data (vs display only)",
+            variable=modify_data_var
+        )
+        modify_data_check.pack(pady=3)
+        
+        # Add explanation for the new option - more compact
+        explanation_label = ctk.CTkLabel(
+            options_frame,
+            text="• Checked: Permanently change pixel values\n• Unchecked: Only change visual display",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+            justify="left"
+        )
+        explanation_label.pack(pady=(2, 8))
+        
+        # Button frame - FIXED HEIGHT
+        button_frame = ctk.CTkFrame(main_frame, height=80)  # Fixed height for buttons
+        button_frame.pack(fill="x", padx=20, pady=15)
+        button_frame.pack_propagate(False)  # Prevent frame from shrinking
+        
+        # Apply button - UPDATED to pass modify_data option
+        apply_btn = ctk.CTkButton(
+            button_frame,
+            text="Apply Interpolation",
+            command=lambda: self.apply_interpolation_method(
+                method_var.get(), 
+                roi_only_var.get(), 
+                all_frames_var.get(), 
+                modify_data_var.get(),  # NEW PARAMETER
+                options_window
+            ),
+            fg_color="#4CAF50",
+            hover_color="#45a049",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40
+        )
+        apply_btn.pack(side="left", padx=10, pady=15, expand=True, fill="x")
+        
+        # Cancel button
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=options_window.destroy,
+            fg_color="#f44336",
+            hover_color="#da190b",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40
+        )
+        cancel_btn.pack(side="right", padx=10, pady=15, expand=True, fill="x")
+        
+        # Center the window - UPDATED FOR TALLER SIZE
+        options_window.update_idletasks()
+        x = (options_window.winfo_screenwidth() // 2) - (550 // 2)
+        y = (options_window.winfo_screenheight() // 2) - (950 // 2)
+        options_window.geometry(f"550x950+{x}+{y}")
+
+    def apply_interpolation_method(self, method: str, roi_only: bool, all_frames: bool, modify_data: bool, dialog_window):
+        """Apply the selected interpolation method with full ROI, all-frames, and data modification support"""
+        
+        # Validate inputs
+        if not self._validate_interpolation_inputs(roi_only, modify_data):
+            return
             
-            # Method selection
-            method_var = tk.StringVar(value=self.current_display_interpolation)
-            methods = self.interpolator.get_interpolation_methods()
-            
-            # Create scrollable frame for methods - TALLER
-            scrollable_frame = ctk.CTkScrollableFrame(main_frame, width=500, height=550)
-            scrollable_frame.pack(pady=10, padx=20, fill="both", expand=True)
-            
-            # Method descriptions for user understanding
-            method_descriptions = {
-                'none': "No interpolation - raw pixels",
-                'nearest': "Nearest neighbor - sharp, pixelated", 
-                'bilinear': "Linear interpolation - smooth",
-                'bicubic': "Cubic interpolation - very smooth",
-                'spline16': "16-element spline interpolation",
-                'spline36': "36-element spline interpolation", 
-                'hanning': "Hanning windowed interpolation",
-                'hamming': "Hamming windowed interpolation",
-                'hermite': "Hermite interpolation",
-                'kaiser': "Kaiser windowed interpolation",
-                'quadric': "Quadratic interpolation",
-                'catrom': "Catmull-Rom interpolation",
-                'gaussian': "Gaussian interpolation",
-                'bessel': "Bessel interpolation",
-                'mitchell': "Mitchell interpolation",
-                'sinc': "Sinc interpolation - high quality",
-                'lanczos': "Lanczos interpolation - very high quality",
-                'antialiased': "Antialiased interpolation",
-                'auto': "Automatic selection by matplotlib"
-            }
-            
-            # Create radio buttons for each method - LARGER LAYOUT
-            for method in methods:
-                method_frame = ctk.CTkFrame(scrollable_frame)
-                method_frame.pack(fill="x", padx=10, pady=5)  # More padding
+        validated_method = self.interpolator.apply_interpolation_method(method)
+        
+        # Log the operation parameters
+        self.logger.info(f"Interpolation: {validated_method}, ROI only: {roi_only}, All frames: {all_frames}, Modify data: {modify_data}")
+        
+        try:
+            if modify_data:
+                # Option A: Modify actual pixel data
+                self._apply_data_interpolation(validated_method, roi_only, all_frames)
+            else:
+                # Option B: Display-only interpolation
+                self._apply_display_interpolation(validated_method, roi_only, all_frames)
                 
-                # Radio button
-                radio = ctk.CTkRadioButton(
-                    method_frame,
-                    text=f"{method}",
-                    variable=method_var,
-                    value=method,
-                    font=ctk.CTkFont(size=14, weight="bold")  # Larger font
-                )
-                radio.pack(anchor="w", padx=15, pady=8)  # More padding
+            dialog_window.destroy()
+            
+        except Exception as e:
+            self.logger.error(f"Interpolation failed: {e}")
+            self.update_status(f"Interpolation failed: {str(e)}")
+            messagebox.showerror("Interpolation Error", f"Failed to apply interpolation:\n{str(e)}")
+
+    def _validate_interpolation_inputs(self, roi_only: bool, modify_data: bool) -> bool:
+        """Validate interpolation inputs and show error messages if needed"""
+        
+        # Check if image is loaded
+        if self.current_image is None:
+            messagebox.showerror("No Image", "No image loaded. Please load an image or array data first.")
+            return False
+            
+        # Check ROI requirement
+        if roi_only and (not self.roi_selector or not self.roi_selector.rois):
+            messagebox.showerror(
+                "No ROI Selected", 
+                "ROI-only interpolation requires at least one Region of Interest.\n\n"
+                "Steps to create ROI:\n"
+                "1. Click 'Enable ROI Mode'\n"
+                "2. Select ROI type (Rectangle/Point)\n"
+                "3. Draw ROI on your image\n\n"
+                "Then try interpolation again."
+            )
+            return False
+            
+        # Warn about data modification
+        if modify_data:
+            result = messagebox.askyesno(
+                "Modify Pixel Data", 
+                "This will permanently change the pixel values.\n\n"
+                "The original data will be stored for undo.\n\n"
+                "Do you want to proceed?",
+                icon="warning"
+            )
+            if not result:
+                return False
                 
-                # Description
-                desc = method_descriptions.get(method, "Matplotlib interpolation method")
-                desc_label = ctk.CTkLabel(
-                    method_frame,
-                    text=desc,
-                    font=ctk.CTkFont(size=12),  # Larger description font
-                    text_color="gray"
-                )
-                desc_label.pack(anchor="w", padx=35, pady=(0, 8))  # More padding
+        return True
+
+    def _apply_data_interpolation(self, method: str, roi_only: bool, all_frames: bool):
+        """Apply interpolation to actual pixel data (Option A)"""
+        
+        # Store original data for undo functionality
+        self._store_undo_data(all_frames)
+        
+        if all_frames:
+            self._apply_data_interpolation_all_frames(method, roi_only)
+        else:
+            self._apply_data_interpolation_single_frame(method, roi_only)
+
+    def _apply_display_interpolation(self, method: str, roi_only: bool, all_frames: bool):
+        """Apply interpolation to display only (Option B)"""
+        
+        # Update display interpolation setting
+        self.current_display_interpolation = method
+        
+        # Update title to show interpolation method
+        current_title = getattr(self, 'current_title', 'Image')
+        if ' (' in current_title and current_title.endswith(')'):
+            current_title = current_title.split(' (')[0]
+        
+        new_title = f"{current_title} ({method})"
+        self.current_title = new_title
+        
+        # For display-only, we just update the matplotlib imshow interpolation
+        # The ROI and all-frames options don't apply to display-only mode
+        if self.current_image is not None:
+            self.display_image(self.current_image, new_title)
+        
+        status_msg = f"Applied {method} display interpolation"
+        if roi_only or all_frames:
+            status_msg += " (ROI and all-frames options apply only when modifying data)"
             
-            # Options frame - EXPANDED
-            options_frame = ctk.CTkFrame(main_frame)
-            options_frame.pack(fill="x", padx=20, pady=10)
-            
-            # ROI only option
-            roi_only_var = tk.BooleanVar(value=False)
-            roi_check = ctk.CTkCheckBox(
-                options_frame,
-                text="Apply to ROI only (if ROI selected)",
-                variable=roi_only_var
+        self.update_status(status_msg)
+
+    def _apply_data_interpolation_single_frame(self, method: str, roi_only: bool):
+        """Apply data interpolation to current frame only"""
+        
+        if roi_only:
+            # Apply to ROI interior pixels only (excluding boundary)
+            roi_mask = self._get_roi_interior_mask(self.current_image.shape[:2])
+            self.current_image = self.interpolator.interpolate_roi_pixels(
+                self.current_image, roi_mask, method
             )
-            roi_check.pack(pady=5)
+            status_msg = f"Applied {method} interpolation to ROI interior pixels"
+        else:
+            # Apply to full image
+            self.current_image = self.interpolator.interpolate_pixel_data(self.current_image, method)
+            status_msg = f"Applied {method} interpolation to full image"
+        
+        # Update current array data
+        self.current_array = self.current_image
+        
+        # Refresh display
+        title = f"Interpolated ({method})"
+        self.display_image(self.current_image, title)
+        self.update_status(status_msg)
+        
+        # Enable undo button
+        self.undo_btn.configure(state="normal")
+
+    def _apply_data_interpolation_all_frames(self, method: str, roi_only: bool):
+        """Apply data interpolation to all loaded frames with progress tracking"""
+        
+        if not self.current_items or len(self.current_items) <= 1:
+            messagebox.showwarning("Insufficient Frames", "All frames option requires multiple frames loaded.")
+            return
+        
+        # Create progress dialog
+        progress_window = self._create_progress_dialog(len(self.current_items))
+        
+        try:
+            processed_count = 0
             
-            # NEW: Apply to all loaded frames option
-            all_frames_var = tk.BooleanVar(value=False)
-            all_frames_check = ctk.CTkCheckBox(
-                options_frame,
-                text=f"Apply to all loaded frames ({len(self.current_items) if self.current_items else 0} frames)",
-                variable=all_frames_var
-            )
-            all_frames_check.pack(pady=5)
+            for i, item_num in enumerate(self.current_items):
+                # Update progress
+                progress_msg = f"Processing frame {item_num} ({i+1}/{len(self.current_items)})"
+                self._update_progress_dialog(progress_window, progress_msg, i, len(self.current_items))
+                
+                # Load frame data
+                frame_data = self.array_handler.load_item(item_num)
+                if frame_data is None:
+                    continue
+                
+                # Apply interpolation
+                if roi_only:
+                    roi_mask = self._get_roi_interior_mask(frame_data.shape[:2])
+                    processed_frame = self.interpolator.interpolate_roi_pixels(frame_data, roi_mask, method)
+                else:
+                    processed_frame = self.interpolator.interpolate_pixel_data(frame_data, method)
+                
+                # Update the frame in memory (if we had persistent storage, we'd save here)
+                # For now, we'll update the current display if it matches
+                if item_num == self.current_items[0]:  # If this is the currently displayed frame
+                    self.current_image = processed_frame
+                    self.current_array = processed_frame
+                
+                processed_count += 1
             
-            # Disable if no multiple frames loaded
-            if not self.current_items or len(self.current_items) <= 1:
-                all_frames_check.configure(state="disabled")
+            # Close progress dialog
+            progress_window.destroy()
             
-            # Button frame
-            button_frame = ctk.CTkFrame(main_frame)
-            button_frame.pack(fill="x", padx=20, pady=10)
+            # Refresh display
+            title = f"All Frames Interpolated ({method})"
+            if self.current_image is not None:
+                self.display_image(self.current_image, title)
             
-            # Apply button - UPDATED to pass all_frames option
-            apply_btn = ctk.CTkButton(
-                button_frame,
-                text="Apply Interpolation",
-                command=lambda: self.apply_interpolation_method(
-                    method_var.get(), roi_only_var.get(), all_frames_var.get(), options_window
-                ),
-                fg_color="#4CAF50",
-                hover_color="#45a049",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                height=40
-            )
-            apply_btn.pack(side="left", padx=10, pady=10, expand=True, fill="x")
+            status_msg = f"Applied {method} interpolation to {processed_count}/{len(self.current_items)} frames"
+            if roi_only:
+                status_msg += " (ROI interior pixels only)"
             
-            # Cancel button
-            cancel_btn = ctk.CTkButton(
-                button_frame,
-                text="Cancel",
-                command=options_window.destroy,
-                fg_color="#f44336",
-                hover_color="#da190b",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                height=40
-            )
-            cancel_btn.pack(side="right", padx=10, pady=10, expand=True, fill="x")
+            self.update_status(status_msg)
             
-            # Center the window - UPDATED FOR TALLER SIZE
-            options_window.update_idletasks()
-            x = (options_window.winfo_screenwidth() // 2) - (550 // 2)
-            y = (options_window.winfo_screenheight() // 2) - (900 // 2)
-            options_window.geometry(f"550x900+{x}+{y}")
+            # Enable undo button
+            self.undo_btn.configure(state="normal")
+            
+        except Exception as e:
+            progress_window.destroy()
+            raise e
+
+    def _get_roi_interior_mask(self, image_shape: Tuple[int, int]) -> np.ndarray:
+        """Get combined mask for all ROIs with interior pixels only (excluding boundaries)"""
+        
+        if not self.roi_selector or not self.roi_selector.rois:
+            return np.zeros(image_shape, dtype=bool)
+        
+        combined_mask = np.zeros(image_shape, dtype=bool)
+        
+        for roi in self.roi_selector.rois:
+            roi_mask = roi.get_mask(image_shape)  # This already excludes boundaries per your ROI implementation
+            combined_mask |= roi_mask
+        
+        return combined_mask
+
+    def undo_interpolation(self):
+        """Undo last interpolation operation"""
+        
+        if not hasattr(self, 'undo_data') or not self.undo_data:
+            messagebox.showinfo("No Undo Available", "No interpolation operation to undo.")
+            return
+        
+        try:
+            if self.undo_data['type'] == 'all_frames':
+                # For all frames, we restore the original data
+                # Note: Since we don't have persistent frame storage yet, 
+                # we'll restore the currently displayed frame
+                if 'current_image_backup' in self.undo_data:
+                    self.current_image = self.undo_data['current_image_backup']
+                    self.current_array = self.undo_data['current_array_backup']
+                    self.display_image(self.current_image, "Restored from Undo")
+                
+                self.update_status(f"Undid interpolation for all frames")
+                
+            else:
+                # Restore single frame
+                self.current_image = self.undo_data['current_image']
+                if self.undo_data['current_array'] is not None:
+                    self.current_array = self.undo_data['current_array']
+                
+                self.display_image(self.current_image, "Restored from Undo")
+                self.update_status("Undid last interpolation operation")
+            
+            # Clear undo data after use and disable undo button
+            self.undo_data = {}
+            self.undo_btn.configure(state="disabled")
+            
+        except Exception as e:
+            self.logger.error(f"Undo failed: {e}")
+            messagebox.showerror("Undo Error", f"Failed to undo interpolation:\n{str(e)}")
+
+    def _store_undo_data(self, all_frames: bool):
+        """Store original data for undo functionality"""
+        
+        if not hasattr(self, 'undo_data'):
+            self.undo_data = {}
+        
+        if all_frames and self.current_items:
+            # For all frames, store the current display state
+            self.undo_data['type'] = 'all_frames'
+            self.undo_data['current_image_backup'] = self.current_image.copy()
+            self.undo_data['current_array_backup'] = self.current_array.copy() if self.current_array is not None else None
+        else:
+            # Store current frame data
+            self.undo_data['type'] = 'single_frame'
+            self.undo_data['current_image'] = self.current_image.copy()
+            self.undo_data['current_array'] = self.current_array.copy() if self.current_array is not None else None
+        
+        self.logger.info(f"Stored undo data: {self.undo_data['type']}")
+
+    def _create_progress_dialog(self, total_frames: int):
+        """Create progress dialog for multi-frame operations"""
+        
+        progress_window = ctk.CTkToplevel(self.root)
+        progress_window.title("Processing Frames")
+        progress_window.geometry("450x180")
+        progress_window.grab_set()
+        progress_window.resizable(False, False)
+        
+        # Center the window
+        progress_window.update_idletasks()
+        x = (progress_window.winfo_screenwidth() // 2) - (450 // 2)
+        y = (progress_window.winfo_screenheight() // 2) - (180 // 2)
+        progress_window.geometry(f"450x180+{x}+{y}")
+        
+        # Progress frame
+        progress_frame = ctk.CTkFrame(progress_window)
+        progress_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            progress_frame,
+            text="Interpolating Frames",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        title_label.pack(pady=(10, 5))
+        
+        # Progress label
+        progress_label = ctk.CTkLabel(
+            progress_frame,
+            text="Initializing...",
+            font=ctk.CTkFont(size=12)
+        )
+        progress_label.pack(pady=(5, 5))
+        
+        # Progress bar
+        progress_bar = ctk.CTkProgressBar(progress_frame, width=350, height=20)
+        progress_bar.pack(pady=(10, 15))
+        progress_bar.set(0)
+        
+        # Progress percentage label
+        percentage_label = ctk.CTkLabel(
+            progress_frame,
+            text="0%",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        percentage_label.pack()
+        
+        # Store references for updates
+        progress_window.progress_label = progress_label
+        progress_window.progress_bar = progress_bar
+        progress_window.percentage_label = percentage_label
+        
+        return progress_window
+
+    def _update_progress_dialog(self, progress_window, message: str, current: int, total: int):
+        """Update progress dialog with current status"""
+        
+        try:
+            progress_window.progress_label.configure(text=message)
+            progress_value = current / total
+            progress_window.progress_bar.set(progress_value)
+            percentage = int(progress_value * 100)
+            progress_window.percentage_label.configure(text=f"{percentage}%")
+            progress_window.update()
+        except:
+            # Progress window might have been closed
+            pass
 
     def plot_action(self):
         """Handle plot button click - Enhanced with ROI vs Frame plotting"""
