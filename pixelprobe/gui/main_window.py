@@ -12,6 +12,8 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 import matplotlib.patches as patches
+from pixelprobe.gui.dialogs.plotting_dialog import create_plotting_dialog
+from tkinter import messagebox
 
 from pixelprobe.utils.config import load_config, ensure_directories
 from pixelprobe.gui.dialogs.file_dialogs import FileDialogs
@@ -1428,10 +1430,74 @@ class PixelProbeApp:
         self.update_status("Segmentation not yet implemented")
     
     def plot_action(self):
-        """Handle plot button click"""
+        """Handle plot button click - Enhanced with ROI vs Frame plotting"""
         self.logger.info("Plot action triggered")
-        self.update_status("Plotting not yet implemented")
-    
+        
+        # Validate prerequisites
+        if not self.current_items or len(self.current_items) < 2:
+            self.update_status("Need at least 2 frames loaded for plotting")
+            messagebox.showinfo(
+                "Insufficient Data",
+                "ROI vs Frame plotting requires multiple frames.\n\n"
+                f"Currently loaded: {len(self.current_items) if self.current_items else 0} frames\n"
+                "Required: At least 2 frames\n\n"
+                "Please load multiple frames using 'Load Data' → 'Multiple Items' mode."
+            )
+            return
+        
+        if not self.roi_selector or not self.roi_selector.rois:
+            self.update_status("No ROIs available for plotting")
+            messagebox.showinfo(
+                "No ROIs Selected",
+                "ROI vs Frame plotting requires at least one Region of Interest.\n\n"
+                "Steps to create ROIs:\n"
+                "1. Click 'Enable ROI Mode'\n"
+                "2. Select 'Rectangle' or 'Point' ROI type\n"
+                "3. Draw ROI on your image\n\n"
+                "Then try plotting again."
+            )
+            return
+        
+        # All prerequisites met - show plotting dialog
+        self.update_status(f"Opening ROI plotting dialog - {len(self.current_items)} frames, {len(self.roi_selector.rois)} ROIs")
+        
+        try:
+            # Import and create plotting dialog
+            from pixelprobe.gui.dialogs.plotting_dialog import create_plotting_dialog
+            
+            create_plotting_dialog(
+                parent=self.root,
+                array_handler=self.array_handler,
+                roi_selector=self.roi_selector,
+                current_items=self.current_items
+            )
+            
+            self.logger.info("ROI plotting dialog opened successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error opening plotting dialog: {e}")
+            self.update_status(f"Error opening plotting dialog: {str(e)}")
+            messagebox.showerror("Plotting Error", f"Could not open plotting dialog:\n{str(e)}")
+
+    # Also add this helper method to provide better user feedback
+    def get_plotting_status_info(self) -> str:
+        """Get current status for plotting functionality"""
+        frames_loaded = len(self.current_items) if self.current_items else 0
+        rois_available = len(self.roi_selector.rois) if self.roi_selector else 0
+        
+        status_parts = []
+        status_parts.append(f"Frames: {frames_loaded}")
+        status_parts.append(f"ROIs: {rois_available}")
+        
+        if frames_loaded < 2:
+            status_parts.append("⚠️ Need ≥2 frames")
+        if rois_available == 0:
+            status_parts.append("⚠️ Need ≥1 ROI")
+        if frames_loaded >= 2 and rois_available > 0:
+            status_parts.append("✅ Ready to plot")
+            
+        return " | ".join(status_parts)
+
     def stats_action(self):
         """Handle statistics button click"""
         self.logger.info("Statistics action triggered")
