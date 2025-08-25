@@ -46,6 +46,10 @@ class PixelProbeApp:
         self.roi_selector = None
         self.roi_mode_active = False
 
+        # Cleanup tracking
+        self.scheduled_callbacks = []
+        self.is_closing = False
+
         # Ensure required directories exist
         ensure_directories(self.config)
         
@@ -159,7 +163,7 @@ class PixelProbeApp:
         )
         self.roi_mode_btn.grid(row=7, column=0, padx=20, pady=5)
         
-        # ROI selection buttons
+        # ROI selection buttons - CIRCLE REMOVED
         self.roi_rect_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Rectangle",
@@ -169,15 +173,6 @@ class PixelProbeApp:
         )
         self.roi_rect_btn.grid(row=8, column=0, padx=20, pady=2)
         
-        self.roi_circle_btn = ctk.CTkButton(
-            self.sidebar_frame,
-            text="Circle",
-            command=self.set_circle_roi,
-            state="disabled",
-            width=120
-        )
-        self.roi_circle_btn.grid(row=9, column=0, padx=20, pady=2)
-        
         self.roi_point_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Point",
@@ -185,7 +180,7 @@ class PixelProbeApp:
             state="disabled",
             width=120
         )
-        self.roi_point_btn.grid(row=10, column=0, padx=20, pady=2)
+        self.roi_point_btn.grid(row=9, column=0, padx=20, pady=2)
         
         # ROI management buttons
         self.roi_clear_btn = ctk.CTkButton(
@@ -197,7 +192,7 @@ class PixelProbeApp:
             fg_color="red",
             hover_color="darkred"
         )
-        self.roi_clear_btn.grid(row=11, column=0, padx=20, pady=5)
+        self.roi_clear_btn.grid(row=10, column=0, padx=20, pady=5)
         
         # Analysis section
         self.analysis_label = ctk.CTkLabel(
@@ -296,6 +291,112 @@ class PixelProbeApp:
         
         self.logger.debug("Main interface widgets created with manual navigation")
 
+    def setup_window(self):
+        """Configure the main window properties"""
+        self.root.title("PixelProbe")
+        
+        # Set window size from config
+        width, height = map(int, self.config['window_size'].split('x'))
+        self.root.geometry(f"{width}x{height}")
+        
+        # Center window on screen
+        self.root.update_idletasks()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Configure grid weights for responsive design
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
+        
+        # Set minimum window size
+        self.root.minsize(800, 600)
+        
+        # FIXED: Add proper close handling
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        self.logger.debug(f"Window configured: {width}x{height}")
+
+    def update_status(self, message: str):
+        """Update status with a persistent message that stays longer"""
+        if self.is_closing:
+            return
+        
+        self.status_label.configure(text=message)
+        self.root.update_idletasks()
+        
+        # Clear the message after 8 seconds - with cleanup tracking
+        def clear_status():
+            if not self.is_closing:
+                try:
+                    self.status_label.configure(text="Ready")
+                except:
+                    pass
+        
+        callback_id = self.root.after(8000, clear_status)
+        self.scheduled_callbacks.append(callback_id)
+
+    def on_closing(self):
+        """Handle application closing with proper cleanup"""
+        self.logger.info("Application closing...")
+        
+        # Prevent new callbacks
+        self.is_closing = True
+        
+        try:
+            # Cancel all scheduled callbacks
+            for callback_id in self.scheduled_callbacks:
+                try:
+                    self.root.after_cancel(callback_id)
+                except:
+                    pass
+            
+            # Cleanup ROI selector
+            if self.roi_selector:
+                self.roi_selector.deactivate_selection()
+            
+            # Close matplotlib figures
+            plt.close('all')
+            
+        except Exception as e:
+            self.logger.error(f"Cleanup error: {e}")
+        
+        # Close the application
+        self.root.quit()
+        self.root.destroy()
+
+    def run(self):
+        """Start the application main loop"""
+        self.logger.info("Starting PixelProbe main loop")
+        try:
+            self.root.mainloop()
+        except Exception as e:
+            self.logger.error(f"Error in main loop: {e}")
+        finally:
+            self.logger.info("PixelProbe application closed")
+
+    def snap_to_pixel_grid(self, coord):
+        """Snap coordinate to nearest pixel center"""
+        return int(round(coord))
+    
+    def get_pixel_info_at_cursor(self, event):
+        """Get pixel information at cursor position"""
+        if event.inaxes == self.subplot and self.current_image is not None:
+            x = int(round(event.xdata)) if event.xdata is not None else None
+            y = int(round(event.ydata)) if event.ydata is not None else None
+            
+            if x is not None and y is not None:
+                if 0 <= y < self.current_image.shape[0] and 0 <= x < self.current_image.shape[1]:
+                    pixel_value = self.current_image[y, x]
+                    return f"Pixel ({x}, {y}): {pixel_value}"
+        
+        return "Outside image bounds"
+
+    def update_roi_status(self, message):
+        """Update status with ROI-specific messaging"""
+        pixel_perfect_message = f"[PIXEL-PERFECT] {message}"
+        self.update_status(pixel_perfect_message)
+
     def get_roi_statistics(self):
         """Get statistics for all current ROIs with debug info"""
         print(f"DEBUG: ROI selector exists: {self.roi_selector is not None}")
@@ -313,6 +414,69 @@ class PixelProbeApp:
         
         print("DEBUG: Returning empty dict")
         return {}
+        
+    def create_histogram_plot(self, parent_frame):
+        """Create histogram plot in the statistics window"""
+        try:
+            # Generate histogram data
+            hist_data = self.analyzer.generate_histogram_data(self.current_image)
+            
+            if not hist_data:
+                error_label = tk.Label(parent_frame, text="No histogram data available", 
+                                    font=("Arial", 12), fg="red", bg='#2b2b2b')
+                error_label.pack(pady=50)
+                return
+            
+            # Create matplotlib figure
+            fig = Figure(figsize=(10, 6), dpi=80, facecolor='#2b2b2b')
+            
+            if hist_data.get('type') == 'grayscale':
+                # Grayscale histogram
+                ax = fig.add_subplot(111, facecolor='#1e1e1e')
+                
+                # Use actual data range
+                data = hist_data['data']
+                data_min, data_max = float(np.min(data)), float(np.max(data))
+                
+                ax.hist(data, bins=256, range=(data_min, data_max), 
+                    color='lightblue', alpha=0.7, edgecolor='white', linewidth=0.5)
+                ax.set_title('Grayscale Histogram', fontsize=14, fontweight='bold', color='white')
+                ax.set_xlabel('Pixel Intensity', color='white')
+                ax.set_ylabel('Frequency', color='white')
+                ax.grid(True, alpha=0.3, color='white')
+                ax.tick_params(colors='white')
+                
+            else:
+                # Color histogram
+                ax = fig.add_subplot(111, facecolor='#1e1e1e')
+                colors = ['red', 'green', 'blue']
+                
+                for color in colors:
+                    if color in hist_data.get('histograms', {}):
+                        hist_info = hist_data['histograms'][color]
+                        bin_centers = (hist_info['bins'][:-1] + hist_info['bins'][1:]) / 2
+                        ax.plot(bin_centers, hist_info['hist'], 
+                            color=color, alpha=0.8, linewidth=2, label=f'{color.capitalize()} Channel')
+                
+                ax.set_title('RGB Histogram', fontsize=14, fontweight='bold', color='white')
+                ax.set_xlabel('Pixel Intensity', color='white')
+                ax.set_ylabel('Frequency', color='white')
+                ax.legend()
+                ax.grid(True, alpha=0.3, color='white')
+                ax.tick_params(colors='white')
+            
+            fig.tight_layout()
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, parent_frame)
+            canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
+            canvas.draw()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create histogram plot: {e}")
+            error_label = tk.Label(parent_frame, text=f"Histogram error: {str(e)}", 
+                                font=("Arial", 12), fg="red", bg='#2b2b2b')
+            error_label.pack(pady=50)
 
     def set_rectangle_roi(self):
         """Set ROI selection to rectangle mode"""
@@ -371,6 +535,136 @@ class PixelProbeApp:
         self.roi_clear_btn.configure(state="disabled")
         
         self.update_status("ROI mode deactivated")
+    
+    def update_roi_average(self, roi_checkboxes, roi_stats, average_text):
+        """Update the average results when ROI selection changes"""
+        
+        # Get selected ROIs
+        selected_rois = [roi_name for roi_name, checkbox_var in roi_checkboxes.items() if checkbox_var.get()]
+        
+        if not selected_rois:
+            # No ROIs selected
+            no_selection_message = """
+    📈 AVERAGE ROI RESULTS
+    {'='*50}
+
+    No ROIs selected.
+
+    Please select at least one ROI from the 
+    left panel to see averaged statistics.
+            """
+            average_text.config(state='normal')
+            average_text.delete('1.0', tk.END)
+            average_text.insert('1.0', no_selection_message)
+            average_text.config(state='disabled')
+            return
+        
+        # Calculate averages for selected ROIs
+        valid_values = []
+        valid_point_values = []
+        valid_region_data = []
+        
+        for roi_name in selected_rois:
+            roi_data = roi_stats[roi_name]
+            
+            if 'error' in roi_data:
+                continue  # Skip ROIs with errors
+                
+            if 'pixel_value' in roi_data:
+                # Point ROI
+                valid_point_values.append(roi_data['pixel_value'])
+                valid_values.append(roi_data['pixel_value'])
+            else:
+                # Region ROI - use mean value
+                if 'mean' in roi_data:
+                    valid_values.append(roi_data['mean'])
+                    valid_region_data.append({
+                        'mean': roi_data['mean'],
+                        'std': roi_data['std'],
+                        'pixel_count': roi_data['pixel_count']
+                    })
+        
+        if not valid_values:
+            # No valid data
+            error_message = """
+    📈 AVERAGE ROI RESULTS
+    {'='*50}
+
+    ❌ No valid data found in selected ROIs.
+
+    All selected ROIs contain errors or 
+    invalid data.
+            """
+            average_text.config(state='normal')
+            average_text.delete('1.0', tk.END)
+            average_text.insert('1.0', error_message)
+            average_text.config(state='disabled')
+            return
+        
+        # Calculate statistics
+        mean_value = np.mean(valid_values)
+        std_value = np.std(valid_values)
+        min_value = np.min(valid_values)
+        max_value = np.max(valid_values)
+        
+        # Create results text
+        results_text = f"""
+    📈 AVERAGE ROI RESULTS
+    {'='*50}
+
+    📊 SELECTION SUMMARY:
+        Total ROIs Selected:     {len(selected_rois)}
+        Valid Data Points:       {len(valid_values)}
+        Point ROIs:             {len(valid_point_values)}
+        Region ROIs:            {len(valid_region_data)}
+
+    🎯 AVERAGED STATISTICS:
+        Mean Value:             {mean_value:.3f}
+        Standard Deviation:     {std_value:.3f}
+        Minimum:                {min_value:.3f}
+        Maximum:                {max_value:.3f}
+        Range:                  {max_value - min_value:.3f}
+        
+    📋 SELECTED ROI DETAILS:
+    """
+        
+        for roi_name in selected_rois:
+            roi_data = roi_stats[roi_name]
+            if 'error' in roi_data:
+                results_text += f"    ❌ {roi_name}: {roi_data['error']}\n"
+            elif 'pixel_value' in roi_data:
+                results_text += f"    📍 {roi_name}: {roi_data['pixel_value']:.3f}\n"
+            else:
+                results_text += f"    📊 {roi_name}: {roi_data['mean']:.3f} ± {roi_data['std']:.3f}\n"
+        
+        if len(valid_region_data) > 0:
+            # Additional region-specific statistics
+            total_pixels = sum(r['pixel_count'] for r in valid_region_data)
+            weighted_mean = sum(r['mean'] * r['pixel_count'] for r in valid_region_data) / total_pixels
+            
+            results_text += f"""
+    🔍 REGION-SPECIFIC ANALYSIS:
+        Total Pixels:           {total_pixels:,}
+        Weighted Mean:          {weighted_mean:.3f}
+        """
+        
+        # Update the text area
+        average_text.config(state='normal')
+        average_text.delete('1.0', tk.END)
+        average_text.insert('1.0', results_text)
+        average_text.config(state='disabled')
+
+    def select_all_rois(self, roi_checkboxes, roi_stats, average_text):
+        """Select all ROI checkboxes"""
+        for checkbox_var in roi_checkboxes.values():
+            checkbox_var.set(True)
+        self.update_roi_average(roi_checkboxes, roi_stats, average_text)
+
+    def clear_all_rois(self, roi_checkboxes, roi_stats, average_text):
+        """Clear all ROI checkboxes"""
+        for checkbox_var in roi_checkboxes.values():
+            checkbox_var.set(False)
+        self.update_roi_average(roi_checkboxes, roi_stats, average_text)
 
     def setup_manual_navigation(self):
         """Set up manual navigation using matplotlib's built-in features"""
@@ -378,6 +672,15 @@ class PixelProbeApp:
         # Enable matplotlib's built-in pan and zoom
         def on_key_press(event):
             """Handle keyboard shortcuts for navigation"""
+
+            # PRIORITY: Let ROI selector handle Ctrl key when in Point mode
+            if (self.roi_mode_active and 
+                self.roi_selector and 
+                self.roi_selector.current_roi_type == ROIType.POINT and
+                event.key == 'ctrl'):
+                # Don't process this event - let ROI selector handle it
+                return
+
             if event.key == 'r':  # Reset view
                 self.subplot.set_xlim(auto=True)
                 self.subplot.set_ylim(auto=True)
@@ -509,42 +812,41 @@ class PixelProbeApp:
         self.subplot.callbacks.connect('xlim_changed', on_xlims_change)
         self.subplot.callbacks.connect('ylim_changed', on_xlims_change)
 
-    # ✅ NEW: ROI-related methods
+    # NEW: ROI-related methods
     def toggle_roi_mode(self):
-        """Toggle ROI selection mode on/off"""
-        if not self.current_image is None:
-            if not self.roi_mode_active:
-                self._activate_roi_mode()
-            else:
-                self._deactivate_roi_mode()
+        """Toggle ROI selection mode"""
+        if self.roi_mode_active:
+            # Deactivate
+            self._deactivate_roi_mode()
         else:
-            self.update_status("Please load an image first")
+            # Activate
+            self._activate_roi_mode()
 
     def _activate_roi_mode(self):
         """Activate ROI selection mode"""
-        # Initialize ROI selector if not exists
-        if self.roi_selector is None:
-            self.roi_selector = ROISelector(
-                self.figure, 
-                self.subplot, 
-                status_callback=self.update_status
-            )
+        if self.current_image is None:
+            self.update_status("Please load an image first")
+            return
         
         self.roi_mode_active = True
+        
+        # Initialize ROI selector if not exists
+        if self.roi_selector is None:
+            self.roi_selector = ROISelector(self.figure, self.subplot, self.update_status)
+        
+        # Activate selection
         self.roi_selector.activate_selection()
         
-        # Update button states
-        self.roi_mode_btn.configure(text="Disable ROI Mode", fg_color="green")
+        # Update UI
+        self.roi_mode_btn.configure(text="Disable ROI Mode", fg_color=["#ff6b35", "#e85a31"])
         self.roi_rect_btn.configure(state="normal")
-        self.roi_circle_btn.configure(state="normal")
         self.roi_point_btn.configure(state="normal")
         self.roi_clear_btn.configure(state="normal")
         
         # Set default to rectangle
         self.set_rectangle_roi()
         
-        self.update_status("ROI mode activated - Select a shape and click on the image")
-        self.logger.info("ROI mode activated")
+        self.update_status("ROI mode activated - Rectangle selection ready (pixel-perfect)")
 
     def _deactivate_roi_mode(self):
         """Deactivate ROI selection mode"""
@@ -553,29 +855,18 @@ class PixelProbeApp:
         
         self.roi_mode_active = False
         
-        # Update button states
         self.roi_mode_btn.configure(text="Enable ROI Mode", fg_color="gray")
         self.roi_rect_btn.configure(state="disabled")
-        self.roi_circle_btn.configure(state="disabled")
         self.roi_point_btn.configure(state="disabled")
         self.roi_clear_btn.configure(state="disabled")
         
         self.update_status("ROI mode deactivated")
-        self.logger.info("ROI mode deactivated")
-
-    # Add these methods to your PixelProbeApp class in main_window.py
 
     def set_rectangle_roi(self):
         """Set ROI selection to rectangle mode"""
         if self.roi_selector and self.roi_mode_active:
             self.roi_selector.set_roi_type(ROIType.RECTANGLE)
             self._update_roi_button_colors("rectangle")
-
-    def set_circle_roi(self):
-        """Set ROI selection to circle mode"""
-        if self.roi_selector and self.roi_mode_active:
-            self.roi_selector.set_roi_type(ROIType.CIRCLE)
-            self._update_roi_button_colors("circle")
 
     def set_point_roi(self):
         """Set ROI selection to point mode"""
@@ -584,20 +875,15 @@ class PixelProbeApp:
             self._update_roi_button_colors("point")
 
     def _update_roi_button_colors(self, active_type):
-        """Update ROI button colors to show active selection"""
-        # Reset all to default color
-        default_color = ["#1f538d", "#14375e"]  # CustomTkinter default colors
+        """Update ROI button colors to show active selection - Circle removed"""
+        default_color = ["#1f538d", "#14375e"]
         
         self.roi_rect_btn.configure(fg_color=default_color)
-        self.roi_circle_btn.configure(fg_color=default_color)
         self.roi_point_btn.configure(fg_color=default_color)
         
-        # Highlight active button
-        active_color = ["#ff6b35", "#e85a31"]  # Orange highlight
+        active_color = ["#ff6b35", "#e85a31"]
         if active_type == "rectangle":
             self.roi_rect_btn.configure(fg_color=active_color)
-        elif active_type == "circle":
-            self.roi_circle_btn.configure(fg_color=active_color)
         elif active_type == "point":
             self.roi_point_btn.configure(fg_color=active_color)
 
@@ -605,12 +891,28 @@ class PixelProbeApp:
         """Clear all ROIs"""
         if self.roi_selector:
             self.roi_selector.clear_rois()
-            # Redisplay the image to remove visual ROI elements
             if self.current_image is not None:
                 current_title = self.subplot.get_title()
                 self.display_image(self.current_image, current_title)
-            
             self.update_status("All ROIs cleared and display refreshed")
+
+    def get_roi_statistics(self):
+        """Get statistics for all current ROIs with debug info"""
+        print(f"DEBUG: ROI selector exists: {self.roi_selector is not None}")
+        print(f"DEBUG: Current image exists: {self.current_image is not None}")
+        
+        if self.roi_selector:
+            print(f"DEBUG: Number of ROIs: {len(self.roi_selector.rois)}")
+            for i, roi in enumerate(self.roi_selector.rois):
+                print(f"DEBUG: ROI {i}: {roi.label}, type: {roi.roi_type}")
+        
+        if self.roi_selector and self.current_image is not None:
+            roi_stats = self.roi_selector.get_roi_statistics(self.current_image)
+            print(f"DEBUG: ROI stats returned: {roi_stats}")
+            return roi_stats
+        
+        print("DEBUG: Returning empty dict")
+        return {}
 
     def _redraw_roi_visual(self, roi):
         """Redraw a single ROI visual element"""
@@ -682,142 +984,53 @@ class PixelProbeApp:
         except Exception as e:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
 
-    def display_image(self, image_array, title="Loaded Image"):
-        """Enhanced image display with ROI persistence and zoom tracking"""
+    def display_image(self, image: np.ndarray, title: str = "Image"):
+        """Display image in the matplotlib subplot with ROI preservation - NO COLORBAR"""
         try:
-            # Store current zoom/view limits before clearing
-            current_xlim = None
-            current_ylim = None
-            if hasattr(self, 'subplot') and self.subplot.get_xlim() != (0.0, 1.0):
-                current_xlim = self.subplot.get_xlim()
-                current_ylim = self.subplot.get_ylim()
+            # Store current ROIs if they exist
+            existing_rois = []
+            if self.roi_selector and self.roi_selector.rois:
+                existing_rois = self.roi_selector.rois.copy()
             
-            # Store current ROIs to redraw them
-            current_rois = []
-            if self.roi_selector:
-                current_rois = self.roi_selector.rois.copy()
-            
-            # Clear and redraw image
+            # Clear the subplot and figure completely to remove old colorbars
             self.subplot.clear()
+            # Also clear any existing colorbars from the figure
+            if hasattr(self.figure, 'axes') and len(self.figure.axes) > 1:
+                # Remove extra axes (colorbars)
+                for ax in self.figure.axes[1:]:
+                    ax.remove()
             
-            if len(image_array.shape) == 2:
-                # Grayscale image with proper interpolation for pixel-level viewing
-                im = self.subplot.imshow(
-                    image_array, 
-                    cmap='gray', 
-                    interpolation='nearest',  # Sharp pixels when zoomed
-                    aspect='equal'  # Maintain pixel aspect ratio
-                )
+            # Display image WITHOUT colorbar
+            if len(image.shape) == 2:
+                # Grayscale
+                im = self.subplot.imshow(image, cmap='gray', aspect='equal')
             else:
-                # Color image
-                im = self.subplot.imshow(
-                    image_array, 
-                    interpolation='nearest',
-                    aspect='equal'
-                )
+                # Color
+                im = self.subplot.imshow(image, aspect='equal')
             
             self.subplot.set_title(title)
+            self.subplot.axis('on')  # Show axes for pixel coordinates
             
-            # Restore zoom if it was previously set
-            if current_xlim is not None and current_ylim is not None:
-                self.subplot.set_xlim(current_xlim)
-                self.subplot.set_ylim(current_ylim)
-            else:
-                # Set proper initial view
-                self.subplot.set_xlim(0, image_array.shape[1])
-                self.subplot.set_ylim(image_array.shape[0], 0)
+            # Set up pixel-perfect display
+            self.subplot.set_xlim(-0.5, image.shape[1] - 0.5)
+            self.subplot.set_ylim(image.shape[0] - 0.5, -0.5)
             
-            # Redraw all ROIs
-            if current_rois:
-                for roi in current_rois:
-                    self._redraw_roi_visual(roi)
+            # Restore ROIs if they existed
+            if existing_rois and self.roi_selector:
+                self.roi_selector.rois = existing_rois
+                for roi in existing_rois:
+                    self.roi_selector._visualize_roi(roi)
+            
+            # NO COLORBAR - removed this line: plt.colorbar(im, ax=self.subplot, shrink=0.8)
             
             self.canvas.draw()
+            self.current_image = image
             
-            # Make canvas focusable for keyboard events (needed for multi-point)
-            self.canvas.get_tk_widget().focus_set()
-            
-            # Reinitialize ROI selector if in ROI mode
-            if self.roi_mode_active and self.roi_selector:
-                self.roi_selector.figure = self.figure
-                self.roi_selector.subplot = self.subplot
-                # Restore the ROIs list
-                self.roi_selector.rois = current_rois
-            
-            self.logger.info(f"Displayed image with shape {image_array.shape}")
-            
-            # Update zoom info
-            if hasattr(self, 'zoom_info_label'):
-                self.zoom_info_label.configure(text="Image loaded - Use mouse wheel to zoom")
+            self.logger.info(f"Image displayed: {image.shape}, {image.dtype}")
             
         except Exception as e:
             self.logger.error(f"Failed to display image: {e}")
-            self.update_status("Failed to display image")
-
-    def _redraw_roi_visual(self, roi: ROI):
-        """Redraw a single ROI visual element"""
-        try:
-            if roi.roi_type == ROIType.RECTANGLE:
-                rect = patches.Rectangle(
-                    (roi.coordinates['x'], roi.coordinates['y']),
-                    roi.coordinates['width'],
-                    roi.coordinates['height'],
-                    fill=False,
-                    edgecolor=roi.color,
-                    linewidth=roi.linewidth,
-                    alpha=0.8
-                )
-                self.subplot.add_patch(rect)
-            
-            elif roi.roi_type == ROIType.CIRCLE:
-                circle = patches.Circle(
-                    (roi.coordinates['cx'], roi.coordinates['cy']),
-                    roi.coordinates['radius'],
-                    fill=False,
-                    edgecolor=roi.color,
-                    linewidth=roi.linewidth,
-                    alpha=0.8
-                )
-                self.subplot.add_patch(circle)
-            
-            elif roi.roi_type == ROIType.POINT:
-                # Enhanced point visualization
-                self.subplot.plot(
-                    roi.coordinates['x'],
-                    roi.coordinates['y'],
-                    marker='+',
-                    color=roi.color,
-                    markersize=12,
-                    markeredgewidth=3,
-                    markerfacecolor='none',
-                    alpha=0.9
-                )
-                # Add pixel coordinates as text annotation
-                self.subplot.annotate(
-                    f"({int(roi.coordinates['x'])}, {int(roi.coordinates['y'])})",
-                    (roi.coordinates['x'], roi.coordinates['y']),
-                    xytext=(10, 10), textcoords='offset points',
-                    fontsize=9, color=roi.color,
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
-                )
-            
-        except Exception as e:
-            self.logger.warning(f"Failed to redraw ROI visual: {e}")
-
-    # Enhanced ROI clearing method
-    def clear_rois(self):
-        """Enhanced ROI clearing with proper visual cleanup"""
-        if self.roi_selector:
-            self.roi_selector.clear_rois()
-            
-            # Redisplay the image to remove visual ROI elements
-            if self.current_image is not None:
-                # Get current title
-                current_title = self.subplot.get_title()
-                # Redisplay without ROIs
-                self.display_image(self.current_image, current_title)
-            
-            self.update_status("All ROIs cleared and display refreshed")
+            self.update_status(f"Display error: {str(e)}")
 
     # Enhanced statistics display for point ROIs  
     def format_point_roi_stats(self, roi_name, roi_data, basic_stats):
@@ -1237,7 +1450,7 @@ class PixelProbeApp:
             self.update_status("Statistics calculation failed")
 
     def show_statistics_window(self, basic_stats, quality_metrics, roi_stats=None):
-        """Display statistics in a professional window with improved styling"""
+        """Display statistics in a professional window with ROI selection functionality"""
         
         # Create statistics window with larger size
         stats_window = tk.Toplevel(self.root)
@@ -1255,25 +1468,17 @@ class PixelProbeApp:
         # Configure ttk style for better appearance
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure('Custom.TNotebook', background='#2b2b2b', borderwidth=0)
-        style.configure('Custom.TNotebook.Tab', 
-                    background='#3c3c3c', 
-                    foreground='#ffffff',
-                    padding=[20, 12],
-                    font=('Arial', 14, 'bold'))
-        style.map('Custom.TNotebook.Tab',
-                background=[('selected', '#4a5568'), ('active', '#4c4c4c')],
-                foreground=[('selected', '#ffffff'), ('active', '#ffffff')])
+        style.configure('Custom.TNotebook', background='#2b2b2b')
+        style.configure('Custom.TNotebook.Tab', background='#404040', foreground='white', padding=[20, 10])
         
-        # Create notebook for tabs with custom style
+        # Main notebook for tabs
         notebook = ttk.Notebook(stats_window, style='Custom.TNotebook')
         notebook.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Basic Statistics Tab
         basic_frame = tk.Frame(notebook, bg='#2b2b2b')
-        notebook.add(basic_frame, text="📊 Basic Statistics")
+        notebook.add(basic_frame, text="📊 Basic Stats")
         
-        # Create text widget with scrollbar - simplified approach
         basic_text = tk.Text(
             basic_frame,
             font=("Consolas", 16),
@@ -1290,23 +1495,49 @@ class PixelProbeApp:
         basic_scrollbar = tk.Scrollbar(basic_frame, orient="vertical", command=basic_text.yview)
         basic_text.configure(yscrollcommand=basic_scrollbar.set)
         
-        # Pack scrollbar and text widget
         basic_scrollbar.pack(side="right", fill="y")
         basic_text.pack(side="left", fill="both", expand=True, padx=20, pady=20)
         
-        # Format and display basic statistics
-        stats_text = self.format_statistics_text(basic_stats, quality_metrics)
-        basic_text.insert('1.0', stats_text)
+        # Format basic statistics text
+        basic_text_content = f"""
+    📊 BASIC IMAGE STATISTICS
+    {'='*70}
+
+    🔢 PIXEL VALUE DISTRIBUTION:
+        Mean (Average):          {basic_stats.get('mean', 0):.3f}
+        Median (50th Percentile): {basic_stats.get('median', 0):.3f}
+        Mode (Most Frequent):    {basic_stats.get('mode', 0):.3f}
+        
+    📏 SPREAD & VARIABILITY:
+        Standard Deviation:      {basic_stats.get('std', 0):.3f}
+        Variance:               {basic_stats.get('variance', 0):.3f}
+        Range (Max - Min):      {basic_stats.get('range', 0):.3f}
+        
+    ⚡ EXTREME VALUES:
+        Minimum Pixel Value:     {basic_stats.get('min', 0):.3f}
+        Maximum Pixel Value:     {basic_stats.get('max', 0):.3f}
+        
+    📐 IMAGE DIMENSIONS:
+        Width (pixels):          {basic_stats.get('width', 0):,}
+        Height (pixels):         {basic_stats.get('height', 0):,}
+        Total Pixels:           {basic_stats.get('total_pixels', 0):,}
+        
+    🎨 IMAGE TYPE:
+        Data Type:              {basic_stats.get('dtype', 'Unknown')}
+        Color Channels:         {basic_stats.get('channels', 'Unknown')}
+        Bit Depth:              {basic_stats.get('bit_depth', 'Unknown')} bits
+    """
+        
+        basic_text.insert('1.0', basic_text_content)
         basic_text.config(state='disabled')
         
         # Quality Metrics Tab
         quality_frame = tk.Frame(notebook, bg='#2b2b2b')
-        notebook.add(quality_frame, text="🔍 Quality Metrics")
+        notebook.add(quality_frame, text="🔍 Quality")
         
-        # Quality metrics display with larger font
         quality_text = tk.Text(
-            quality_frame, 
-            font=("Consolas", 18), 
+            quality_frame,
+            font=("Consolas", 16),
             wrap='word',
             bg='#1e1e1e',
             fg='#e0e0e0',
@@ -1317,10 +1548,6 @@ class PixelProbeApp:
             padx=20,
             pady=20
         )
-        quality_scrollbar = tk.Scrollbar(quality_frame, orient="vertical", command=quality_text.yview)
-        quality_text.configure(yscrollcommand=quality_scrollbar.set)
-        
-        quality_scrollbar.pack(side="right", fill="y")
         quality_text.pack(side="left", fill="both", expand=True, padx=20, pady=20)
         
         # Format quality metrics text
@@ -1346,72 +1573,173 @@ class PixelProbeApp:
         quality_text.insert('1.0', quality_text_content)
         quality_text.config(state='disabled')
         
-        # ROI Statistics Tab (if ROI data available)
+        # ROI Statistics Tab with Selection (if ROI data available)
         if roi_stats:
             roi_frame = tk.Frame(notebook, bg='#2b2b2b')
             notebook.add(roi_frame, text="🎯 ROI Analysis")
             
-            roi_text = tk.Text(
-                roi_frame,
-                font=("Consolas", 16),
-                wrap='word',
+            # Create main container with two sections
+            main_container = tk.Frame(roi_frame, bg='#2b2b2b')
+            main_container.pack(fill='both', expand=True, padx=20, pady=20)
+            
+            # Left side: Individual ROI selection and stats
+            left_frame = tk.Frame(main_container, bg='#1e1e1e', relief='ridge', bd=2)
+            left_frame.pack(side='left', fill='both', expand=True, padx=(0, 10))
+            
+            # ROI selection header
+            roi_header = tk.Label(
+                left_frame,
+                text="🎯 Select ROIs for Averaging",
+                font=("Arial", 18, "bold"),
                 bg='#1e1e1e',
+                fg='#4CAF50'
+            )
+            roi_header.pack(pady=10)
+            
+            # Scrollable frame for ROI checkboxes
+            roi_canvas = tk.Canvas(left_frame, bg='#1e1e1e', highlightthickness=0)
+            roi_scrollbar = tk.Scrollbar(left_frame, orient="vertical", command=roi_canvas.yview)
+            roi_scrollable_frame = tk.Frame(roi_canvas, bg='#1e1e1e')
+            
+            roi_scrollable_frame.bind(
+                "<Configure>",
+                lambda e: roi_canvas.configure(scrollregion=roi_canvas.bbox("all"))
+            )
+            
+            roi_canvas.create_window((0, 0), window=roi_scrollable_frame, anchor="nw")
+            roi_canvas.configure(yscrollcommand=roi_scrollbar.set)
+            
+            roi_canvas.pack(side="left", fill="both", expand=True, padx=10)
+            roi_scrollbar.pack(side="right", fill="y")
+            
+            # Dictionary to store checkbox variables
+            roi_checkboxes = {}
+            
+            # Create checkboxes for each ROI
+            for i, (roi_name, roi_data) in enumerate(roi_stats.items()):
+                # ROI container frame
+                roi_container = tk.Frame(roi_scrollable_frame, bg='#2b2b2b', relief='raised', bd=1)
+                roi_container.pack(fill='x', padx=5, pady=5)
+                
+                # Checkbox variable
+                checkbox_var = tk.BooleanVar()
+                roi_checkboxes[roi_name] = checkbox_var
+                
+                # Checkbox
+                checkbox = tk.Checkbutton(
+                    roi_container,
+                    text=roi_name,
+                    variable=checkbox_var,
+                    font=("Arial", 14, "bold"),
+                    bg='#2b2b2b',
+                    fg='#ffffff',
+                    selectcolor='#404040',
+                    activebackground='#2b2b2b',
+                    activeforeground='#4CAF50',
+                    command=lambda: self.update_roi_average(roi_checkboxes, roi_stats, average_text)
+                )
+                checkbox.pack(anchor='w', padx=10, pady=5)
+                
+                # ROI details
+                if 'error' in roi_data:
+                    details_text = f"❌ Error: {roi_data['error']}"
+                    detail_color = '#f44336'
+                elif 'pixel_value' in roi_data:
+                    # Point ROI
+                    details_text = f"📍 Point: ({roi_data.get('x_coord', 'N/A')}, {roi_data.get('y_coord', 'N/A')}) | Value: {roi_data.get('pixel_value', 0):.3f}"
+                    detail_color = '#4CAF50'
+                else:
+                    # Region ROI  
+                    details_text = f"📊 Region: {roi_data.get('pixel_count', 0)} pixels | Mean: {roi_data.get('mean', 0):.3f} | Std: {roi_data.get('std', 0):.3f}"
+                    detail_color = '#2196F3'
+                
+                details_label = tk.Label(
+                    roi_container,
+                    text=details_text,
+                    font=("Consolas", 11),
+                    bg='#2b2b2b',
+                    fg=detail_color
+                )
+                details_label.pack(anchor='w', padx=30, pady=(0, 5))
+            
+            # Right side: Average results
+            right_frame = tk.Frame(main_container, bg='#1e1e1e', relief='ridge', bd=2)
+            right_frame.pack(side='right', fill='both', expand=True, padx=(10, 0))
+            
+            # Average results header
+            avg_header = tk.Label(
+                right_frame,
+                text="📈 Average of Selected ROIs",
+                font=("Arial", 18, "bold"),
+                bg='#1e1e1e',
+                fg='#FF9800'
+            )
+            avg_header.pack(pady=10)
+            
+            # Average results text area
+            average_text = tk.Text(
+                right_frame,
+                font=("Consolas", 14),
+                wrap='word',
+                bg='#2b2b2b',
                 fg='#e0e0e0',
                 insertbackground='#ffffff',
                 selectbackground='#4a5568',
                 selectforeground='#ffffff',
                 relief='flat',
-                padx=20,
-                pady=20
+                padx=15,
+                pady=15,
+                height=20
             )
-            roi_scrollbar = tk.Scrollbar(roi_frame, orient="vertical", command=roi_text.yview)
-            roi_text.configure(yscrollcommand=roi_scrollbar.set)
+            average_text.pack(fill='both', expand=True, padx=10, pady=10)
             
-            roi_scrollbar.pack(side="right", fill="y")
-            roi_text.pack(side="left", fill="both", expand=True, padx=20, pady=20)
-            
-            # Format ROI statistics
-            roi_text_content = f"""
-    🎯 REGION OF INTEREST ANALYSIS
-    {'='*70}
+            # Initial message
+            initial_message = """
+    📈 AVERAGE ROI RESULTS
+    {'='*50}
 
-    📊 ROI SUMMARY:
-        Total ROIs Analyzed:     {len(roi_stats)}
-        Analysis Timestamp:      {self._get_current_timestamp()}
+    Select ROIs from the left panel to see
+    averaged statistics here.
 
-    """
+    Instructions:
+    ✅ Check ROIs you want to include
+    📊 Results update automatically  
+    🎯 Mix points and regions as needed
+            """
+            average_text.insert('1.0', initial_message)
+            average_text.config(state='disabled')
             
-            for roi_name, roi_data in roi_stats.items():
-                roi_text_content += f"""
-    📍 {roi_name.upper()}:
-    {'-'*50}
-    """
-                
-                if 'pixel_value' in roi_data:
-                    # Point ROI
-                    roi_text_content += f"""
-        Type:                   Single Pixel
-        Coordinates:            {roi_data.get('coordinates', 'N/A')}
-        Pixel Value:            {roi_data.get('pixel_value', 0):.3f}
-        Value Percentile:       {self._calculate_percentile(roi_data.get('pixel_value', 0), basic_stats):.1f}%
-    """
-                else:
-                    # Region ROI
-                    roi_text_content += f"""
-        Type:                   Region
-        Pixel Count:            {roi_data.get('pixel_count', 0):,}
-        Mean Value:             {roi_data.get('mean', 0):.3f}
-        Standard Deviation:     {roi_data.get('std', 0):.3f}
-        Value Range:            {roi_data.get('min', 0):.3f} - {roi_data.get('max', 0):.3f}
-        Coefficient of Variation: {(roi_data.get('std', 0) / max(roi_data.get('mean', 1), 1)):.3f}
-        
-        📊 Comparison to Image:
-        ROI Mean vs Image Mean: {((roi_data.get('mean', 0) / max(basic_stats.get('mean', 1), 1)) - 1) * 100:+.1f}%
-        Relative Variability:  {((roi_data.get('std', 0) / max(basic_stats.get('std', 1), 1)) - 1) * 100:+.1f}%
-    """
+            # Control buttons frame
+            control_frame = tk.Frame(right_frame, bg='#1e1e1e')
+            control_frame.pack(fill='x', padx=10, pady=10)
             
-            roi_text.insert('1.0', roi_text_content)
-            roi_text.config(state='disabled')
+            # Select All button
+            select_all_btn = tk.Button(
+                control_frame,
+                text="Select All ROIs",
+                command=lambda: self.select_all_rois(roi_checkboxes, roi_stats, average_text),
+                font=("Arial", 12, "bold"),
+                bg='#4CAF50',
+                fg='white',
+                activebackground='#45a049',
+                padx=20,
+                pady=5
+            )
+            select_all_btn.pack(side='left', padx=5)
+            
+            # Clear All button
+            clear_all_btn = tk.Button(
+                control_frame,
+                text="Clear All ROIs", 
+                command=lambda: self.clear_all_rois(roi_checkboxes, roi_stats, average_text),
+                font=("Arial", 12, "bold"),
+                bg='#f44336',
+                fg='white',
+                activebackground='#da190b',
+                padx=20,
+                pady=5
+            )
+            clear_all_btn.pack(side='left', padx=5)
         
         # Histogram Tab
         histogram_frame = tk.Frame(notebook, bg='#2b2b2b')
@@ -1439,117 +1767,6 @@ class PixelProbeApp:
             cursor='hand2'
         )
         close_btn.pack()
-
-    def create_histogram_plot(self, parent_frame):
-        """Create histogram plot in the statistics window"""
-        try:
-            # Generate histogram data
-            hist_data = self.analyzer.generate_histogram_data(self.current_image)
-            
-            # Create matplotlib figure
-            fig = Figure(figsize=(10, 6), dpi=80)
-            
-            if hist_data.get('type') == 'grayscale':
-                # Grayscale histogram
-                ax = fig.add_subplot(111)
-                ax.hist(hist_data['data'], bins=256, range=(0, 255), color='gray', alpha=0.7)
-                ax.set_title('Grayscale Histogram', fontsize=14, fontweight='bold')
-                ax.set_xlabel('Pixel Intensity')
-                ax.set_ylabel('Frequency')
-                ax.grid(True, alpha=0.3)
-                
-            else:
-                # Color histogram
-                ax = fig.add_subplot(111)
-                colors = ['red', 'green', 'blue']
-                
-                for color in colors:
-                    if color in hist_data.get('histograms', {}):
-                        hist_info = hist_data['histograms'][color]
-                        ax.plot(hist_info['bins'][:-1], hist_info['hist'], 
-                            color=color, alpha=0.7, linewidth=2, label=color.capitalize())
-                
-                ax.set_title('RGB Histogram', fontsize=14, fontweight='bold')
-                ax.set_xlabel('Pixel Intensity')
-                ax.set_ylabel('Frequency')
-                ax.legend()
-                ax.grid(True, alpha=0.3)
-            
-            fig.tight_layout()
-            
-            # Add to GUI
-            canvas = FigureCanvasTkAgg(fig, parent_frame)
-            canvas.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
-            canvas.draw()
-            
-        except Exception as e:
-            self.logger.error(f"Failed to create histogram plot: {e}")
-            error_label = tk.Label(parent_frame, text="Failed to generate histogram", 
-                                font=("Arial", 12), fg="red")
-            error_label.pack(pady=50)
-
-    def format_statistics_text(self, basic_stats, quality_metrics):
-        """Format statistics into readable text with better styling"""
-        if not basic_stats:
-            return "❌ No statistics available - please load an image first"
-        
-        text = f"""
-📊 IMAGE STATISTICS REPORT
-{'='*90}
-
-📐 IMAGE DIMENSIONS & PROPERTIES
-    Shape: {basic_stats.get('shape', 'N/A')}
-    Data Type: {basic_stats.get('dtype', 'N/A')}
-    Channels: {basic_stats.get('channels', 'N/A')}
-    File Size: {basic_stats.get('file_size', 'N/A')} bytes
-
-📈 STATISTICAL ANALYSIS
-"""
-        
-        if basic_stats.get('channels') == 1:
-            # Grayscale image with enhanced formatting
-            text += f"""
-🔘 GRAYSCALE IMAGE ANALYSIS
-
-    📊 Central Tendency:
-        Mean Value:           {basic_stats.get('mean', 0):.3f}
-        Median Value:         {basic_stats.get('median', 0):.3f}
-        Mode Value:           {basic_stats.get('mode', 0):.3f}
-    
-    📏 Spread & Distribution:
-        Standard Deviation:   {basic_stats.get('std', 0):.3f}
-        Variance:            {basic_stats.get('variance', 0):.3f}
-        Range (Min-Max):     {basic_stats.get('min', 0):.3f} - {basic_stats.get('max', 0):.3f}
-    
-    📈 Shape Characteristics:
-        Skewness:            {basic_stats.get('skewness', 0):.6f}
-        Kurtosis:            {basic_stats.get('kurtosis', 0):.6f}
-        
-    💾 Information Content:
-        Entropy:             {basic_stats.get('entropy', 0):.6f} bits
-"""
-        else:
-            # Color image
-            text += f"""
-🌈 COLOR IMAGE ANALYSIS
-
-    📊 Per-Channel Statistics:
-        Red Channel Mean:     {basic_stats.get('mean_r', 0):.3f}
-        Green Channel Mean:   {basic_stats.get('mean_g', 0):.3f}
-        Blue Channel Mean:    {basic_stats.get('mean_b', 0):.3f}
-"""
-        
-        # Quality metrics
-        if quality_metrics:
-            text += f"""
-
-🎯 QUALITY METRICS
-    Contrast:            {quality_metrics.get('contrast', 0):.6f}
-    Sharpness:           {quality_metrics.get('sharpness', 0):.6f}
-    Brightness:          {quality_metrics.get('brightness', 0):.3f}
-"""
-        
-        return text
 
     def toggle_theme(self):
         """Toggle between light and dark themes"""
