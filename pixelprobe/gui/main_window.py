@@ -22,6 +22,7 @@ from pixelprobe.processing.denoising import AdvancedDenoiseProcessor
 from pixelprobe.analysis.statistics import StatisticalAnalyzer
 from pixelprobe.core.array_handler import ArrayHandler
 from pixelprobe.gui.roi_selector import ROISelector, ROIType, ROI
+from pixelprobe.processing.interpolation import InterpolationProcessor
 
 
 class PixelProbeApp:
@@ -37,6 +38,7 @@ class PixelProbeApp:
         self.array_loader = ArrayLoader()
         self.image_loader = ImageLoader()
         self.array_handler = ArrayHandler()
+        
 
         # Current loaded data
         self.current_array = None
@@ -47,7 +49,7 @@ class PixelProbeApp:
         # ROI functionality
         self.roi_selector = None
         self.roi_mode_active = False
-
+        self.roi_interpolation_active = False  # Track if ROI-specific interpolation is active
         self.camera_roll = None  # Will be created when needed
 
         # Cleanup tracking
@@ -68,6 +70,13 @@ class PixelProbeApp:
 
         # Initialize processing
         self.denoiser = AdvancedDenoiseProcessor()
+
+        self.interpolator = InterpolationProcessor()  # NEW PROCESSOR
+        
+        # Current interpolation settings - SIMPLIFIED
+        self.current_display_interpolation = 'nearest'  # Single setting for all interpolation
+        self.current_title = "Image"  # Track current image title
+
 
         # Initialize analysis
         self.analyzer = StatisticalAnalyzer()
@@ -149,6 +158,13 @@ class PixelProbeApp:
             command=self.segment_action
         )
         self.segment_btn.grid(row=5, column=0, padx=20, pady=5)
+
+        self.interpolation_btn = ctk.CTkButton(
+            self.sidebar_frame,
+            text="Interpolation",
+            command=self.interpolation_action
+        )
+        self.interpolation_btn.grid(row=6, column=0, padx=20, pady=5)
         
         # ROI Section
         self.roi_label = ctk.CTkLabel(
@@ -156,7 +172,7 @@ class PixelProbeApp:
             text="ROI Selection",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.roi_label.grid(row=6, column=0, padx=20, pady=(20, 10))
+        self.roi_label.grid(row=7, column=0, padx=20, pady=(20, 10)) 
         
         # ROI mode toggle
         self.roi_mode_btn = ctk.CTkButton(
@@ -989,52 +1005,54 @@ class PixelProbeApp:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
 
     def display_image(self, image: np.ndarray, title: str = "Image"):
-        """Display image in the matplotlib subplot with ROI preservation - NO COLORBAR"""
-        try:
-            # Store current ROIs if they exist
-            existing_rois = []
-            if self.roi_selector and self.roi_selector.rois:
-                existing_rois = self.roi_selector.rois.copy()
-            
-            # Clear the subplot and figure completely to remove old colorbars
-            self.subplot.clear()
-            # Also clear any existing colorbars from the figure
-            if hasattr(self.figure, 'axes') and len(self.figure.axes) > 1:
-                # Remove extra axes (colorbars)
-                for ax in self.figure.axes[1:]:
-                    ax.remove()
-            
-            # Display image WITHOUT colorbar
-            if len(image.shape) == 2:
-                # Grayscale
-                im = self.subplot.imshow(image, cmap='gray', aspect='equal')
-            else:
-                # Color
-                im = self.subplot.imshow(image, aspect='equal')
-            
-            self.subplot.set_title(title)
-            self.subplot.axis('on')  # Show axes for pixel coordinates
-            
-            # Set up pixel-perfect display
-            self.subplot.set_xlim(-0.5, image.shape[1] - 0.5)
-            self.subplot.set_ylim(image.shape[0] - 0.5, -0.5)
-            
-            # Restore ROIs if they existed
-            if existing_rois and self.roi_selector:
-                self.roi_selector.rois = existing_rois
-                for roi in existing_rois:
-                    self.roi_selector._visualize_roi(roi)
-            
-            # NO COLORBAR - removed this line: plt.colorbar(im, ax=self.subplot, shrink=0.8)
-            
-            self.canvas.draw()
-            self.current_image = image
-            
-            self.logger.info(f"Image displayed: {image.shape}, {image.dtype}")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to display image: {e}")
-            self.update_status(f"Display error: {str(e)}")
+            """Display image in the matplotlib subplot with ROI preservation - RESTORED + INTERPOLATION"""
+            try:
+                # Store current ROIs if they exist
+                existing_rois = []
+                if self.roi_selector and self.roi_selector.rois:
+                    existing_rois = self.roi_selector.rois.copy()
+                
+                # Clear the subplot and figure completely to remove old colorbars
+                self.subplot.clear()
+                # Also clear any existing colorbars from the figure
+                if hasattr(self.figure, 'axes') and len(self.figure.axes) > 1:
+                    # Remove extra axes (colorbars)
+                    for ax in self.figure.axes[1:]:
+                        ax.remove()
+                
+                # Display image WITHOUT colorbar - WITH INTERPOLATION
+                if len(image.shape) == 2:
+                    # Grayscale
+                    im = self.subplot.imshow(image, cmap='gray', aspect='equal', 
+                                        interpolation=self.current_display_interpolation)
+                else:
+                    # Color
+                    im = self.subplot.imshow(image, aspect='equal', 
+                                        interpolation=self.current_display_interpolation)
+                
+                self.subplot.set_title(title)
+                self.subplot.axis('on')  # Show axes for pixel coordinates
+                
+                # Set up pixel-perfect display
+                self.subplot.set_xlim(-0.5, image.shape[1] - 0.5)
+                self.subplot.set_ylim(image.shape[0] - 0.5, -0.5)
+                
+                # Restore ROIs if they existed
+                if existing_rois and self.roi_selector:
+                    self.roi_selector.rois = existing_rois
+                    for roi in existing_rois:
+                        self.roi_selector._visualize_roi(roi)
+                
+                # NO COLORBAR - removed this line: plt.colorbar(im, ax=self.subplot, shrink=0.8)
+                
+                self.canvas.draw()
+                self.current_image = image
+                
+                self.logger.info(f"Image displayed: {image.shape}, {image.dtype}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to display image: {e}")
+                self.update_status(f"Display error: {str(e)}")
 
     # Enhanced statistics display for point ROIs  
     def format_point_roi_stats(self, roi_name, roi_data, basic_stats):
@@ -1428,7 +1446,192 @@ class PixelProbeApp:
         """Handle segment button click"""
         self.logger.info("Segment action triggered")
         self.update_status("Segmentation not yet implemented")
+
+    def interpolation_action(self):
+            """Handle interpolation button click - show options dialog"""
+            self.logger.info("Interpolation action triggered")
+            
+            if self.current_image is None:
+                self.update_status("No image loaded - please load an image or array data first")
+                return
+            
+            # Show interpolation options dialog
+            self.show_interpolation_options()
+
+    def apply_interpolation_method(self, method: str, roi_only: bool, all_frames: bool, dialog_window):
+            """Apply the selected interpolation method - SIMPLE AND WORKING"""
+            validated_method = self.interpolator.apply_interpolation_method(method)
+            
+            # Update current interpolation setting
+            self.current_display_interpolation = validated_method
+            
+            # Update title to show interpolation method
+            current_title = getattr(self, 'current_title', 'Image')
+            if ' (' in current_title and current_title.endswith(')'):
+                current_title = current_title.split(' (')[0]
+            
+            new_title = f"{current_title} ({validated_method})"
+            self.current_title = new_title
+            
+            # Refresh the display with new interpolation - THIS PRESERVES ROIS
+            if self.current_image is not None:
+                self.display_image(self.current_image, new_title)
+            
+            self.update_status(f"Applied {validated_method} interpolation")
+            dialog_window.destroy()
     
+    
+
+    def show_interpolation_options(self):
+            """Show interpolation method selection dialog with unified method list"""
+            # Create dialog window
+            options_window = ctk.CTkToplevel(self.root)
+            options_window.title("Interpolation Methods")
+            options_window.grab_set()  # Make dialog modal
+            
+            # Configure window - TALLER, NOT WIDER
+            options_window.geometry("550x900")
+            options_window.resizable(True, True)  # Allow resizing
+            
+            # Main frame
+            main_frame = ctk.CTkFrame(options_window)
+            main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+            
+            # Title
+            title_label = ctk.CTkLabel(
+                main_frame,
+                text="Select Interpolation Method",
+                font=ctk.CTkFont(size=20, weight="bold")
+            )
+            title_label.pack(pady=(10, 20))
+            
+            # Description
+            desc_label = ctk.CTkLabel(
+                main_frame,
+                text="Choose from all available matplotlib interpolation methods:",
+                font=ctk.CTkFont(size=14),
+                text_color="gray"
+            )
+            desc_label.pack(pady=(0, 15))
+            
+            # Method selection
+            method_var = tk.StringVar(value=self.current_display_interpolation)
+            methods = self.interpolator.get_interpolation_methods()
+            
+            # Create scrollable frame for methods - TALLER
+            scrollable_frame = ctk.CTkScrollableFrame(main_frame, width=500, height=550)
+            scrollable_frame.pack(pady=10, padx=20, fill="both", expand=True)
+            
+            # Method descriptions for user understanding
+            method_descriptions = {
+                'none': "No interpolation - raw pixels",
+                'nearest': "Nearest neighbor - sharp, pixelated", 
+                'bilinear': "Linear interpolation - smooth",
+                'bicubic': "Cubic interpolation - very smooth",
+                'spline16': "16-element spline interpolation",
+                'spline36': "36-element spline interpolation", 
+                'hanning': "Hanning windowed interpolation",
+                'hamming': "Hamming windowed interpolation",
+                'hermite': "Hermite interpolation",
+                'kaiser': "Kaiser windowed interpolation",
+                'quadric': "Quadratic interpolation",
+                'catrom': "Catmull-Rom interpolation",
+                'gaussian': "Gaussian interpolation",
+                'bessel': "Bessel interpolation",
+                'mitchell': "Mitchell interpolation",
+                'sinc': "Sinc interpolation - high quality",
+                'lanczos': "Lanczos interpolation - very high quality",
+                'antialiased': "Antialiased interpolation",
+                'auto': "Automatic selection by matplotlib"
+            }
+            
+            # Create radio buttons for each method - LARGER LAYOUT
+            for method in methods:
+                method_frame = ctk.CTkFrame(scrollable_frame)
+                method_frame.pack(fill="x", padx=10, pady=5)  # More padding
+                
+                # Radio button
+                radio = ctk.CTkRadioButton(
+                    method_frame,
+                    text=f"{method}",
+                    variable=method_var,
+                    value=method,
+                    font=ctk.CTkFont(size=14, weight="bold")  # Larger font
+                )
+                radio.pack(anchor="w", padx=15, pady=8)  # More padding
+                
+                # Description
+                desc = method_descriptions.get(method, "Matplotlib interpolation method")
+                desc_label = ctk.CTkLabel(
+                    method_frame,
+                    text=desc,
+                    font=ctk.CTkFont(size=12),  # Larger description font
+                    text_color="gray"
+                )
+                desc_label.pack(anchor="w", padx=35, pady=(0, 8))  # More padding
+            
+            # Options frame - EXPANDED
+            options_frame = ctk.CTkFrame(main_frame)
+            options_frame.pack(fill="x", padx=20, pady=10)
+            
+            # ROI only option
+            roi_only_var = tk.BooleanVar(value=False)
+            roi_check = ctk.CTkCheckBox(
+                options_frame,
+                text="Apply to ROI only (if ROI selected)",
+                variable=roi_only_var
+            )
+            roi_check.pack(pady=5)
+            
+            # NEW: Apply to all loaded frames option
+            all_frames_var = tk.BooleanVar(value=False)
+            all_frames_check = ctk.CTkCheckBox(
+                options_frame,
+                text=f"Apply to all loaded frames ({len(self.current_items) if self.current_items else 0} frames)",
+                variable=all_frames_var
+            )
+            all_frames_check.pack(pady=5)
+            
+            # Disable if no multiple frames loaded
+            if not self.current_items or len(self.current_items) <= 1:
+                all_frames_check.configure(state="disabled")
+            
+            # Button frame
+            button_frame = ctk.CTkFrame(main_frame)
+            button_frame.pack(fill="x", padx=20, pady=10)
+            
+            # Apply button - UPDATED to pass all_frames option
+            apply_btn = ctk.CTkButton(
+                button_frame,
+                text="Apply Interpolation",
+                command=lambda: self.apply_interpolation_method(
+                    method_var.get(), roi_only_var.get(), all_frames_var.get(), options_window
+                ),
+                fg_color="#4CAF50",
+                hover_color="#45a049",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                height=40
+            )
+            apply_btn.pack(side="left", padx=10, pady=10, expand=True, fill="x")
+            
+            # Cancel button
+            cancel_btn = ctk.CTkButton(
+                button_frame,
+                text="Cancel",
+                command=options_window.destroy,
+                fg_color="#f44336",
+                hover_color="#da190b",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                height=40
+            )
+            cancel_btn.pack(side="right", padx=10, pady=10, expand=True, fill="x")
+            
+            # Center the window - UPDATED FOR TALLER SIZE
+            options_window.update_idletasks()
+            x = (options_window.winfo_screenwidth() // 2) - (550 // 2)
+            y = (options_window.winfo_screenheight() // 2) - (900 // 2)
+            options_window.geometry(f"550x900+{x}+{y}")
+
     def plot_action(self):
         """Handle plot button click - Enhanced with ROI vs Frame plotting"""
         self.logger.info("Plot action triggered")
