@@ -18,6 +18,7 @@ class ArrayHandler:
         self.available_items: List[int] = []
         self.loaded_arrays: Dict[int, np.ndarray] = {}
         self.array_metadata: Dict[int, Dict[str, Any]] = {}
+        self.processed_frames = {}
     
     def set_directory(self, directory: Path) -> bool:
         """
@@ -121,6 +122,7 @@ class ArrayHandler:
             Numpy array or None if loading failed
         """
         try:
+            
             # Check cache first
             if not force_reload and item_number in self.loaded_arrays:
                 self.logger.debug(f"Using cached array for item {item_number}")
