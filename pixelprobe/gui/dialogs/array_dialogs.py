@@ -1,5 +1,5 @@
 """
-Array selection dialog for PixelProbe - Updated with CustomTkinter theming and proper sizing
+Array selection dialog for PixelProbe - Simple fixes: narrower window, bigger font
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -22,22 +22,23 @@ class ArraySelectionDialog:
         self.dialog = ctk.CTkToplevel(self.parent)
         self.dialog.title("PixelProbe - Array Data Selection")
         
-        # Set window size - taller for better organization
-        self.dialog.geometry("900x850")
+        # Set window size - clean proportions
+        self.dialog.geometry("1000x680")
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
         
         # Set minimum size to prevent shrinking
-        self.dialog.minsize(900, 850)
+        self.dialog.minsize(1000, 680)
         
         # Center the window
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (900 // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (850 // 2)
-        self.dialog.geometry(f"900x850+{x}+{y}")
+        x = (self.dialog.winfo_screenwidth() // 2) - (1000 // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (680 // 2)
+        self.dialog.geometry(f"1000x680+{x}+{y}")
         
-        # Configure grid weights
-        self.dialog.grid_columnconfigure(0, weight=1)
+        # Configure grid weights for two columns
+        self.dialog.grid_columnconfigure(0, weight=0)  # Fixed width left column
+        self.dialog.grid_columnconfigure(1, weight=1)  # Expanding right column
         self.dialog.grid_rowconfigure(0, weight=1)
         
         self._create_widgets()
@@ -45,122 +46,145 @@ class ArraySelectionDialog:
         return self.result
     
     def _create_widgets(self):
-        """Create dialog widgets with better organization"""
-        # Main frame 
-        main_frame = ctk.CTkFrame(self.dialog)
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_rowconfigure(2, weight=1)  # Make item selection expandable
+        """Create dialog widgets with clean, readable design"""
+        # LEFT COLUMN - Controls (fixed width)
+        left_frame = ctk.CTkFrame(self.dialog, width=350)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(20, 10), pady=20)
+        left_frame.grid_propagate(False)
+        left_frame.grid_columnconfigure(0, weight=1)
+        left_frame.grid_rowconfigure(3, weight=1)
         
         # Title
         title_label = ctk.CTkLabel(
-            main_frame, 
+            left_frame, 
             text="Array Data Selection", 
-            font=ctk.CTkFont(size=24, weight="bold")
+            font=ctk.CTkFont(size=20, weight="bold")
         )
-        title_label.grid(row=0, column=0, pady=(0, 25), sticky="ew")
+        title_label.grid(row=0, column=0, pady=(20, 25), sticky="ew")
         
-        # Top section: Directory info + Operation selection (side by side)
-        top_section = ctk.CTkFrame(main_frame)
-        top_section.grid(row=1, column=0, sticky="ew", padx=0, pady=(0, 20))
-        top_section.grid_columnconfigure(0, weight=1)
-        top_section.grid_columnconfigure(1, weight=1)
-        
-        # Left: Directory info 
-        dir_frame = ctk.CTkFrame(top_section)
-        dir_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=0)
-        dir_frame.grid_columnconfigure(0, weight=1)
+        # Directory information
+        dir_info_frame = ctk.CTkFrame(left_frame)
+        dir_info_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 20))
         
         dir_title = ctk.CTkLabel(
-            dir_frame,
-            text="Current Directory",
-            font=ctk.CTkFont(size=16, weight="bold")
+            dir_info_frame,
+            text="Directory Information",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
         dir_title.pack(pady=(15, 10))
         
-        if self.array_handler.current_directory:
-            dir_path = str(self.array_handler.current_directory)
-            available_count = len(self.array_handler.get_available_items())
-        else:
-            dir_path = "No directory selected"
-            available_count = 0
-        
-        ctk.CTkLabel(
-            dir_frame,
-            text=f"Path: {dir_path}",
-            font=ctk.CTkFont(size=11),
-            wraplength=380
-        ).pack(padx=15, pady=(0, 8))
-        
-        ctk.CTkLabel(
-            dir_frame,
-            text=f"Available Items: {available_count}",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#4CAF50"
-        ).pack(padx=15, pady=(0, 15))
-        
-        # Right: Operation selection
-        operation_frame = ctk.CTkFrame(top_section)
-        operation_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=0)
-        
-        op_title = ctk.CTkLabel(
-            operation_frame,
-            text="Operation Mode",
-            font=ctk.CTkFont(size=16, weight="bold")
+        # Directory path
+        current_dir = self.array_handler.current_directory if hasattr(self.array_handler, 'current_directory') else "No directory selected"
+        dir_path_label = ctk.CTkLabel(
+            dir_info_frame,
+            text=f"{current_dir}",
+            font=ctk.CTkFont(size=10),
+            wraplength=300
         )
-        op_title.pack(pady=(15, 15))
+        dir_path_label.pack(pady=(0, 8))
         
-        self.operation_var = tk.StringVar(value="single")
+        # Available items count
+        available_items = self.array_handler.get_available_items()
+        items_count_label = ctk.CTkLabel(
+            dir_info_frame,
+            text=f"{len(available_items)} items ({min(available_items) if available_items else 'N/A'} - {max(available_items) if available_items else 'N/A'})",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        items_count_label.pack(pady=(0, 15))
         
-        operations = [
+        # Operation mode
+        mode_frame = ctk.CTkFrame(left_frame)
+        mode_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 20))
+        
+        mode_title = ctk.CTkLabel(
+            mode_frame,
+            text="Operation Mode",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        mode_title.pack(pady=(15, 12))
+        
+        self.operation_mode = tk.StringVar(value="single")
+        
+        modes = [
             ("single", "Single Item"),
-            ("multiple", "Multiple Items"), 
-            ("average", "Average Items")
+            ("multiple", "Multiple Items"),
+            ("average", "Frame Averaging")
         ]
         
-        for value, text in operations:
+        for value, description in modes:
             radio = ctk.CTkRadioButton(
-                operation_frame,
-                text=text,
-                variable=self.operation_var,
+                mode_frame,
+                text=description,
+                variable=self.operation_mode,
                 value=value,
                 font=ctk.CTkFont(size=12)
             )
-            radio.pack(pady=8)
+            radio.pack(pady=6, anchor="w", padx=20)
         
-        # Middle section: Item selection (expandable)
-        selection_frame = ctk.CTkFrame(main_frame)
-        selection_frame.grid(row=2, column=0, sticky="nsew", padx=0, pady=(0, 20))
-        selection_frame.grid_columnconfigure(0, weight=1)
-        selection_frame.grid_rowconfigure(1, weight=1)  # Make listbox expandable
+        # Spacer
+        spacer = ctk.CTkFrame(left_frame, height=1, fg_color="transparent")
+        spacer.grid(row=3, column=0, sticky="ew")
+        
+        # Action buttons
+        button_container = ctk.CTkFrame(left_frame, fg_color="transparent")
+        button_container.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 25))
+        
+        load_btn = ctk.CTkButton(
+            button_container,
+            text="Load Items",
+            command=self._ok_clicked,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            width=180,
+            height=40,
+            fg_color="#2E7D32",  # Dark green
+            hover_color="#1B5E20"
+        )
+        load_btn.pack(pady=(0, 10))
+        
+        cancel_btn = ctk.CTkButton(
+            button_container,
+            text="Cancel",
+            command=self._cancel_clicked,
+            font=ctk.CTkFont(size=13),
+            width=180,
+            height=36,
+            fg_color="#757575",  # Gray
+            hover_color="#616161"
+        )
+        cancel_btn.pack()
+        
+        # RIGHT COLUMN - Item selection
+        right_frame = ctk.CTkFrame(self.dialog)
+        right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_rowconfigure(1, weight=1)
         
         selection_title = ctk.CTkLabel(
-            selection_frame,
+            right_frame,
             text="Select Items",
-            font=ctk.CTkFont(size=16, weight="bold")
+            font=ctk.CTkFont(size=18, weight="bold")
         )
-        selection_title.grid(row=0, column=0, pady=(15, 10), sticky="w", padx=20)
+        selection_title.grid(row=0, column=0, pady=(20, 15), sticky="w", padx=20)
         
-        # Listbox container with scrollbar
-        list_container = ctk.CTkFrame(selection_frame)
+        # Listbox container
+        list_container = ctk.CTkFrame(right_frame)
         list_container.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 15))
         list_container.grid_columnconfigure(0, weight=1)
         list_container.grid_rowconfigure(0, weight=1)
         
-        # Use a regular tkinter Listbox inside CTkFrame
         list_frame = tk.Frame(list_container, bg="#212121")
-        list_frame.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        list_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         list_frame.grid_columnconfigure(0, weight=1)
         list_frame.grid_rowconfigure(0, weight=1)
         
         self.items_listbox = tk.Listbox(
             list_frame,
             selectmode=tk.EXTENDED,
-            height=15,
-            font=("Arial", 11),
-            bg="#404040",
+            height=22,
+            font=("Arial", 14, "normal"),
+            bg="#2b2b2b",
             fg="white",
-            selectbackground="#1f538d",
+            selectbackground="#0078d4",
             selectforeground="white",
             borderwidth=0,
             highlightthickness=0
@@ -170,9 +194,8 @@ class ArraySelectionDialog:
             list_frame,
             orient="vertical",
             command=self.items_listbox.yview,
-            bg="#404040",
-            troughcolor="#212121",
-            activebackground="#606060"
+            bg="#2b2b2b",
+            troughcolor="#1a1a1a"
         )
         
         self.items_listbox.configure(yscrollcommand=scrollbar.set)
@@ -180,104 +203,71 @@ class ArraySelectionDialog:
         scrollbar.grid(row=0, column=1, sticky="ns")
         
         # Populate items
-        available_items = self.array_handler.get_available_items()
         for item in available_items:
             self.items_listbox.insert(tk.END, f"Item {item}")
         
-        # Bottom section: Selection controls
-        controls_frame = ctk.CTkFrame(selection_frame)
+        # Selection controls
+        controls_frame = ctk.CTkFrame(right_frame)
         controls_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
         
         controls_title = ctk.CTkLabel(
             controls_frame,
-            text="Selection Controls",
-            font=ctk.CTkFont(size=14, weight="bold")
+            text="Quick Selection",
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        controls_title.pack(pady=(15, 12))
+        controls_title.pack(pady=(12, 10))
         
-        # Basic controls row
-        basic_controls = ctk.CTkFrame(controls_frame)
-        basic_controls.pack(pady=(0, 10))
+        # Primary controls
+        primary_controls = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        primary_controls.pack(pady=(0, 8))
         
         ctk.CTkButton(
-            basic_controls,
+            primary_controls,
             text="Select All",
             command=self._select_all,
-            width=100, height=32
-        ).pack(side='left', padx=8)
+            width=80,
+            height=32,
+            font=ctk.CTkFont(size=11)
+        ).pack(side='left', padx=3)
         
         ctk.CTkButton(
-            basic_controls,
+            primary_controls,
             text="Clear All",
             command=self._clear_selection,
-            width=100, height=32
-        ).pack(side='left', padx=8)
+            width=80,
+            height=32,
+            font=ctk.CTkFont(size=11)
+        ).pack(side='left', padx=3)
         
         ctk.CTkButton(
-            basic_controls,
-            text="Range Select",
+            primary_controls,
+            text="Range",
             command=self._select_range,
-            width=100, height=32
-        ).pack(side='left', padx=8)
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=11)
+        ).pack(side='left', padx=3)
         
-        # Quick selection row
-        quick_controls = ctk.CTkFrame(controls_frame)
-        quick_controls.pack(pady=(0, 15))
+        # Quick selection
+        quick_controls = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        quick_controls.pack(pady=(0, 12))
         
-        quick_btns = [
+        quick_buttons = [
             ("First 10", lambda: self._select_first_n(10)),
             ("First 50", lambda: self._select_first_n(50)),
             ("Last 10", lambda: self._select_last_n(10)),
             ("Last 50", lambda: self._select_last_n(50))
         ]
         
-        for text, command in quick_btns:
+        for text, command in quick_buttons:
             ctk.CTkButton(
                 quick_controls,
                 text=text,
                 command=command,
-                width=85, height=30
-            ).pack(side='left', padx=6)
-        
-        # Bottom: Action buttons
-        button_container = ctk.CTkFrame(main_frame)
-        button_container.grid(row=3, column=0, sticky="ew", padx=0, pady=(0, 0))
-        
-        btn_frame = ctk.CTkFrame(button_container)
-        btn_frame.pack(pady=20)
-        
-        ok_btn = ctk.CTkButton(
-            btn_frame,
-            text="Load Selected Items",
-            command=self._ok_clicked,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            width=180,
-            height=42,
-            fg_color="#4CAF50",
-            hover_color="#45a049"
-        )
-        ok_btn.pack(side='left', padx=(0, 20))
-        
-        cancel_btn = ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            command=self._cancel_clicked,
-            font=ctk.CTkFont(size=15),
-            width=130,
-            height=42,
-            fg_color="#f44336",
-            hover_color="#da190b"
-        )
-        cancel_btn.pack(side='left')
-        
-        # Info label
-        self.info_label = ctk.CTkLabel(
-            main_frame,
-            text="Choose operation mode, select items from the list, then click 'Load Selected Items'",
-            font=ctk.CTkFont(size=11),
-            text_color="#888888"
-        )
-        self.info_label.grid(row=4, column=0, pady=(10, 0))
+                width=65,
+                height=30,
+                font=ctk.CTkFont(size=10)
+            ).pack(side='left', padx=2)
     
     def _select_all(self):
         """Select all items"""
@@ -381,62 +371,177 @@ class ArraySelectionDialog:
     def _select_first_n(self, n):
         """Select first n items"""
         self.items_listbox.selection_clear(0, tk.END)
-        count = min(n, self.items_listbox.size())
-        for i in range(count):
+        available_count = len(self.array_handler.get_available_items())
+        end_index = min(n, available_count)
+        for i in range(end_index):
             self.items_listbox.select_set(i)
     
     def _select_last_n(self, n):
         """Select last n items"""
         self.items_listbox.selection_clear(0, tk.END)
-        size = self.items_listbox.size()
-        start = max(0, size - n)
-        for i in range(start, size):
+        available_count = len(self.array_handler.get_available_items())
+        start_index = max(0, available_count - n)
+        for i in range(start_index, available_count):
             self.items_listbox.select_set(i)
     
     def _ok_clicked(self):
         """Handle OK button click"""
         selected_indices = self.items_listbox.curselection()
-        
         if not selected_indices:
-            messagebox.showerror("Error", "Please select at least one item", parent=self.dialog)
+            messagebox.showwarning("No Selection", "Please select at least one item.")
             return
         
-        operation = self.operation_var.get()
-        
-        if operation == "single" and len(selected_indices) > 1:
-            messagebox.showerror("Error", "Please select only one item for single item operation", parent=self.dialog)
-            return
-        
-        if operation == "average" and len(selected_indices) < 2:
-            messagebox.showerror("Error", "Please select at least two items for averaging", parent=self.dialog)
-            return
-        
-        # Get selected item numbers
         available_items = self.array_handler.get_available_items()
         selected_items = [available_items[i] for i in selected_indices]
+        operation_mode = self.operation_mode.get()
         
-        self.result = (selected_items, operation)
+        self.result = (selected_items, operation_mode)
         self.dialog.destroy()
     
     def _cancel_clicked(self):
-        """Handle Cancel button click"""
+        """Handle cancel button click"""
         self.result = None
         self.dialog.destroy()
 
 
-def update_status_persistent(parent, message: str):
-    """Helper function to update status with persistent message"""
-    if hasattr(parent, 'update_status'):
-        parent.update_status(message)
-    elif hasattr(parent, 'status_label'):
-        parent.status_label.configure(text=message)
+class MultiItemAverageDialog:
+    """Dialog for configuring multi-item averaging parameters"""
     
-    # Schedule removal of the message after 10 seconds
-    parent.after(10000, lambda: update_status_clear(parent))
+    def __init__(self, parent):
+        self.parent = parent
+        self.result = None
+        
+    def show(self, frame_numbers: List[int]) -> Optional[dict]:
+        """Show averaging configuration dialog"""
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Frame Averaging Configuration")
+        dialog.geometry("500x400")
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f"500x400+{x}+{y}")
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="Frame Averaging Configuration",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(10, 20))
+        
+        # Frame info
+        info_label = ctk.CTkLabel(
+            main_frame,
+            text=f"Selected Frames: {len(frame_numbers)} items\nRange: {min(frame_numbers)} - {max(frame_numbers)}",
+            font=ctk.CTkFont(size=12)
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Averaging method
+        method_frame = ctk.CTkFrame(main_frame)
+        method_frame.pack(fill="x", padx=20, pady=10)
+        
+        method_label = ctk.CTkLabel(method_frame, text="Averaging Method:", font=ctk.CTkFont(size=14, weight="bold"))
+        method_label.pack(pady=(10, 5))
+        
+        self.avg_method = tk.StringVar(value="mean")
+        
+        methods = [
+            ("mean", "Arithmetic Mean - Standard averaging"),
+            ("median", "Median - Less sensitive to outliers"),
+            ("max", "Maximum - Brightest pixel values"),
+            ("min", "Minimum - Darkest pixel values")
+        ]
+        
+        for value, description in methods:
+            radio = ctk.CTkRadioButton(
+                method_frame,
+                text=description,
+                variable=self.avg_method,
+                value=value,
+                font=ctk.CTkFont(size=11)
+            )
+            radio.pack(pady=5, anchor="w", padx=20)
+        
+        # Output options
+        output_frame = ctk.CTkFrame(main_frame)
+        output_frame.pack(fill="x", padx=20, pady=10)
+        
+        output_label = ctk.CTkLabel(output_frame, text="Output Options:", font=ctk.CTkFont(size=14, weight="bold"))
+        output_label.pack(pady=(10, 5))
+        
+        self.save_intermediate = tk.BooleanVar(value=False)
+        save_check = ctk.CTkCheckBox(
+            output_frame,
+            text="Save intermediate calculations",
+            variable=self.save_intermediate,
+            font=ctk.CTkFont(size=11)
+        )
+        save_check.pack(pady=5, anchor="w", padx=20)
+        
+        self.show_progress = tk.BooleanVar(value=True)
+        progress_check = ctk.CTkCheckBox(
+            output_frame,
+            text="Show progress during averaging",
+            variable=self.show_progress,
+            font=ctk.CTkFont(size=11)
+        )
+        progress_check.pack(pady=5, anchor="w", padx=20)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(main_frame)
+        btn_frame.pack(pady=30)
+        
+        ok_btn = ctk.CTkButton(
+            btn_frame,
+            text="Start Averaging",
+            command=lambda: self._ok_clicked(dialog),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            width=150,
+            height=40,
+            fg_color="#4CAF50",
+            hover_color="#45a049"
+        )
+        ok_btn.pack(side='left', padx=(0, 15))
+        
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=14),
+            width=100,
+            height=40
+        )
+        cancel_btn.pack(side='left')
+        
+        dialog.wait_window()
+        return self.result
+    
+    def _ok_clicked(self, dialog):
+        """Handle OK button click"""
+        self.result = {
+            'method': self.avg_method.get(),
+            'save_intermediate': self.save_intermediate.get(),
+            'show_progress': self.show_progress.get()
+        }
+        dialog.destroy()
 
-def update_status_clear(parent):
-    """Helper function to clear persistent status message"""
-    if hasattr(parent, 'update_status'):
-        parent.update_status("Ready")
-    elif hasattr(parent, 'status_label'):
-        parent.status_label.configure(text="Ready")
+
+# Factory functions
+def show_array_selection_dialog(parent, array_handler):
+    """Show array selection dialog and return result"""
+    dialog = ArraySelectionDialog(parent, array_handler)
+    return dialog.show()
+
+def show_averaging_dialog(parent, frame_numbers):
+    """Show frame averaging configuration dialog"""
+    dialog = MultiItemAverageDialog(parent)
+    return dialog.show(frame_numbers)
