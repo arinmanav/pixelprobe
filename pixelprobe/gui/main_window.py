@@ -1150,7 +1150,7 @@ class PixelProbeApp:
             
         except Exception as e:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
-
+            
     def display_image(self, image_data: np.ndarray, title: str = "Image"):
         """Display image with colorbar and colormap support using original array values"""
         
@@ -1159,6 +1159,9 @@ class PixelProbeApp:
             return
         
         try:
+            # Import required for consistent colorbar positioning
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            
             # Store current title
             self.current_title = title
             
@@ -1170,13 +1173,8 @@ class PixelProbeApp:
             # FIXED: Completely clear and recreate the figure to avoid sizing issues
             self.figure.clear()
             
-            # Create new subplot with consistent positioning
-            if self.show_colorbar and len(image_data.shape) == 2 or (len(image_data.shape) == 3 and image_data.shape[2] == 1):
-                # Reserve space for colorbar
-                self.subplot = self.figure.add_subplot(111)
-            else:
-                # No colorbar needed
-                self.subplot = self.figure.add_subplot(111)
+            # FIXED: Create subplot with consistent positioning - always reserve space for potential colorbar
+            self.subplot = self.figure.add_subplot(111)
             
             # Get current interpolation method
             interpolation = getattr(self, 'current_display_interpolation', 'nearest')
@@ -1216,14 +1214,23 @@ class PixelProbeApp:
                     vmax=vmax
                 )
                 
-                # Add colorbar if requested
+                # FIXED: Use make_axes_locatable to create colorbar without affecting main plot position
                 if self.show_colorbar:
+                    # Create divider for consistent positioning
+                    divider = make_axes_locatable(self.subplot)
+                    # Create colorbar axis on the right, 5% of the plot width, with 0.1 inch pad
+                    cax = divider.append_axes("right", size="5%", pad=0.1)
+                    
                     self.current_colorbar = self.figure.colorbar(
-                        im, ax=self.subplot, 
-                        label=f'Pixel Values (Range: {vmin:.2f} - {vmax:.2f})',
-                        shrink=0.8,
-                        pad=0.02
+                        im, cax=cax,
+                        label=f'Pixel Values (Range: {vmin:.2f} - {vmax:.2f})'
                     )
+                else:
+                    # Even when no colorbar, maintain consistent subplot size by creating invisible space
+                    divider = make_axes_locatable(self.subplot)
+                    # Create the space but don't add colorbar - keeps plot position consistent
+                    cax = divider.append_axes("right", size="5%", pad=0.1)
+                    cax.set_visible(False)  # Hide the reserved space
                     
             elif is_rgb:
                 # RGB image - display without colormap or colorbar
@@ -1232,7 +1239,10 @@ class PixelProbeApp:
                     aspect='equal', 
                     interpolation=interpolation
                 )
-                # Note: RGB images don't use colorbars
+                # For RGB, still reserve space to keep positioning consistent across image types
+                divider = make_axes_locatable(self.subplot)
+                cax = divider.append_axes("right", size="5%", pad=0.1)
+                cax.set_visible(False)  # Hide the reserved space
                 
             else:
                 # Fallback for other data shapes
@@ -1242,6 +1252,10 @@ class PixelProbeApp:
                     aspect='equal',
                     interpolation=interpolation
                 )
+                # Reserve space for consistency
+                divider = make_axes_locatable(self.subplot)
+                cax = divider.append_axes("right", size="5%", pad=0.1)
+                cax.set_visible(False)
             
             # Set title and configure axes
             self.subplot.set_title(title)
@@ -1251,8 +1265,8 @@ class PixelProbeApp:
             self.subplot.set_xlim(-0.5, display_data.shape[1] - 0.5)
             self.subplot.set_ylim(display_data.shape[0] - 0.5, -0.5)
             
-            # FIXED: Use tight_layout to maintain consistent sizing
-            self.figure.tight_layout()
+            # FIXED: Use constrained layout instead of tight_layout for better colorbar handling
+            self.figure.set_constrained_layout(True)
             
             # Restore ROIs if they existed
             if existing_rois and self.roi_selector:
