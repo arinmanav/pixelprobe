@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import logging
 from datetime import datetime
+import matplotlib.ticker as ticker
 
 # Import ROIType for enum handling
 try:
@@ -166,64 +167,76 @@ class ROIFramePlottingDialog:
                      fg_color="green").pack(pady=10)
 
     def _create_plot_settings_section(self):
-        """Create main plot settings"""
+        """Create enhanced plot settings with font and size options"""
         settings_frame = ctk.CTkFrame(self.control_scroll)
         settings_frame.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(settings_frame, text="Plot Settings", 
                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
         
-        # Basic labels
-        for label_text, var_name, default in [
-            ("Title:", "title_var", "ROI Average vs Frame Number"),
-            ("X-Label:", "xlabel_var", "Frame Number"),
-            ("Y-Label:", "ylabel_var", "Average Pixel Value")
-        ]:
+        # Basic labels with font size controls
+        labels_data = [
+            ("Title:", "title_var", "ROI Average vs Frame Number", "title_font_size_var", 16),
+            ("X-Label:", "xlabel_var", "Frame Number", "axis_label_font_size_var", 12),
+            ("Y-Label:", "ylabel_var", "Average Pixel Value", "axis_label_font_size_var", 12)
+        ]
+        
+        for i, (label_text, var_name, default, size_var_name, default_size) in enumerate(labels_data):
             row = ctk.CTkFrame(settings_frame)
             row.pack(fill="x", padx=8, pady=2)
             ctk.CTkLabel(row, text=label_text, width=60).pack(side="left", padx=(5, 5))
+            
+            # Text entry
             var = tk.StringVar(value=default)
             entry = ctk.CTkEntry(row, textvariable=var, height=28)
-            entry.pack(side="right", fill="x", expand=True, padx=(5, 5))
+            entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
             setattr(self, var_name, var)
+            
+            # Font size control (only create once for axis labels)
+            if size_var_name and (i == 0 or size_var_name not in [getattr(self, attr, None) for attr in dir(self)]):
+                ctk.CTkLabel(row, text="Size:", width=35).pack(side="left")
+                size_var = tk.DoubleVar(value=default_size)
+                size_entry = ctk.CTkEntry(row, textvariable=size_var, width=50, height=28)
+                size_entry.pack(side="left", padx=(0, 5))
+                setattr(self, size_var_name, size_var)
+        
+        # Axis values font size (separate from axis labels)
+        axis_values_row = ctk.CTkFrame(settings_frame)
+        axis_values_row.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(axis_values_row, text="Axis Values Size:", width=120).pack(side="left", padx=(5, 5))
+        self.axis_values_font_size_var = tk.DoubleVar(value=10)
+        axis_values_entry = ctk.CTkEntry(axis_values_row, textvariable=self.axis_values_font_size_var, width=50, height=28)
+        axis_values_entry.pack(side="left", padx=(0, 5))
         
         # Grid settings
         grid_frame = ctk.CTkFrame(settings_frame)
         grid_frame.pack(fill="x", padx=8, pady=3)
         
         self.grid_var = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(grid_frame, text="Show Grid", variable=self.grid_var).pack(anchor="w", padx=5, pady=2)
+        ctk.CTkCheckBox(grid_frame, text="Grid", variable=self.grid_var).pack(side="left", padx=5)
         
-        # Grid controls
-        grid_row1 = ctk.CTkFrame(grid_frame)
-        grid_row1.pack(fill="x", padx=5, pady=1)
-        ctk.CTkLabel(grid_row1, text="Width:", width=50).pack(side="left", padx=2)
+        ctk.CTkLabel(grid_frame, text="Alpha:", width=40).pack(side="left")
+        self.grid_alpha_var = tk.DoubleVar(value=0.3)
+        ctk.CTkSlider(grid_frame, from_=0.1, to=1.0, variable=self.grid_alpha_var, width=80).pack(side="left", padx=2)
+        
+        ctk.CTkLabel(grid_frame, text="Width:", width=40).pack(side="left")
         self.grid_width_var = tk.DoubleVar(value=0.8)
-        ctk.CTkSlider(grid_row1, from_=0.1, to=3.0, variable=self.grid_width_var, width=80).pack(side="left", padx=2)
-        self.grid_width_label = ctk.CTkLabel(grid_row1, text="0.8", width=30)
-        self.grid_width_label.pack(side="left", padx=2)
+        ctk.CTkSlider(grid_frame, from_=0.5, to=2.0, variable=self.grid_width_var, width=80).pack(side="left", padx=2)
         
-        grid_row2 = ctk.CTkFrame(grid_frame)
-        grid_row2.pack(fill="x", padx=5, pady=1)
-        ctk.CTkLabel(grid_row2, text="Alpha:", width=50).pack(side="left", padx=2)
-        self.grid_alpha_var = tk.DoubleVar(value=0.7)
-        ctk.CTkSlider(grid_row2, from_=0.1, to=1.0, variable=self.grid_alpha_var, width=80).pack(side="left", padx=2)
-        self.grid_alpha_label = ctk.CTkLabel(grid_row2, text="0.7", width=30)
-        self.grid_alpha_label.pack(side="left", padx=2)
-        
-        # Axis settings
+        # Axis controls
         axis_frame = ctk.CTkFrame(settings_frame)
         axis_frame.pack(fill="x", padx=8, pady=3)
         
         self.auto_axis_var = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(axis_frame, text="Auto Scaling", variable=self.auto_axis_var,
-                       command=self._toggle_axis_controls).pack(anchor="w", padx=5, pady=2)
+        auto_check = ctk.CTkCheckBox(axis_frame, text="Auto Axis", variable=self.auto_axis_var,
+                                    command=self._toggle_axis_controls)
+        auto_check.pack(side="left", padx=5)
         
-        # Manual axis controls
-        self.manual_axis_frame = ctk.CTkFrame(axis_frame)
-        self.manual_axis_frame.pack(fill="x", padx=5, pady=2)
+        # Manual axis controls frame
+        self.manual_axis_frame = ctk.CTkFrame(settings_frame)
+        self.manual_axis_frame.pack(fill="x", padx=8, pady=3)
         
-        # X-axis
+        # X-axis controls
         x_frame = ctk.CTkFrame(self.manual_axis_frame)
         x_frame.pack(fill="x", pady=1)
         ctk.CTkLabel(x_frame, text="X:", width=20).pack(side="left", padx=2)
@@ -240,7 +253,7 @@ class ROIFramePlottingDialog:
         self.x_step_var = tk.DoubleVar(value=1.0)
         ctk.CTkEntry(x_frame, textvariable=self.x_step_var, width=50).pack(side="left", padx=1)
         
-        # Y-axis
+        # Y-axis controls
         y_frame = ctk.CTkFrame(self.manual_axis_frame)
         y_frame.pack(fill="x", pady=1)
         ctk.CTkLabel(y_frame, text="Y:", width=20).pack(side="left", padx=2)
@@ -257,7 +270,7 @@ class ROIFramePlottingDialog:
         self.y_step_var = tk.DoubleVar(value=10.0)
         ctk.CTkEntry(y_frame, textvariable=self.y_step_var, width=50).pack(side="left", padx=1)
         
-        # Legend settings
+        # Legend settings with size control
         legend_frame = ctk.CTkFrame(settings_frame)
         legend_frame.pack(fill="x", padx=8, pady=3)
         
@@ -265,12 +278,18 @@ class ROIFramePlottingDialog:
         self.legend_location_var = tk.StringVar(value="upper right")
         ctk.CTkComboBox(legend_frame, values=['upper right', 'upper left', 'lower right', 'lower left', 
                                             'upper center', 'lower center', 'center'],
-                       variable=self.legend_location_var, width=120).pack(side="right", padx=5)
+                    variable=self.legend_location_var, width=120).pack(side="left", padx=5)
+        
+        # Legend font size
+        ctk.CTkLabel(legend_frame, text="Size:", width=35).pack(side="left")
+        self.legend_font_size_var = tk.DoubleVar(value=10)
+        legend_size_entry = ctk.CTkEntry(legend_frame, textvariable=self.legend_font_size_var, width=50, height=28)
+        legend_size_entry.pack(side="left", padx=(0, 5))
         
         self._toggle_axis_controls()  # Initialize state
 
     def _create_individual_traces_section(self):
-        """Create individual trace customization"""
+        """Create individual trace customization including average trace options"""
         if not self.roi_selector or not self.roi_selector.rois:
             return
             
@@ -280,13 +299,15 @@ class ROIFramePlottingDialog:
         ctk.CTkLabel(traces_frame, text="Individual Traces", 
                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
         
-        traces_scroll = ctk.CTkScrollableFrame(traces_frame, height=200)
+        traces_scroll = ctk.CTkScrollableFrame(traces_frame, height=250)  # Increased height
         traces_scroll.pack(fill="x", padx=8, pady=5)
         
         # Initialize trace settings
         default_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         default_markers = ['o', 's', '^', 'v', 'D', '*']
+        marker_options = ['o', 's', '^', 'v', 'D', '*', '+', 'x', 'none']  # Added 'none' option
         
+        # Create trace settings for individual ROIs
         for i, roi in enumerate(self.roi_selector.rois):
             roi_name = roi.label
             
@@ -305,40 +326,53 @@ class ROIFramePlottingDialog:
             trace_frame = ctk.CTkFrame(traces_scroll)
             trace_frame.pack(fill="x", padx=2, pady=2)
             
-            # Name and visibility
+            # Header with ROI name
+            header_frame = ctk.CTkFrame(trace_frame)
+            header_frame.pack(fill="x", padx=3, pady=1)
+            ctk.CTkLabel(header_frame, text=f"📊 {roi_name}", font=ctk.CTkFont(weight="bold")).pack(side="left")
+            
+            # Visibility and color row
             name_row = ctk.CTkFrame(trace_frame)
             name_row.pack(fill="x", padx=3, pady=1)
             
             visible_var = tk.BooleanVar(value=True)
-            ctk.CTkCheckBox(name_row, text="", variable=visible_var, width=20).pack(side="left")
+            ctk.CTkCheckBox(name_row, text="Show", variable=visible_var, width=50).pack(side="left")
             
-            color_btn = ctk.CTkButton(name_row, text="", width=25, height=20,
+            color_btn = ctk.CTkButton(name_row, text="Color", width=60, height=25,
                                     fg_color=self.trace_custom[roi_name]['color'],
                                     command=lambda rn=roi_name: self._choose_color(rn))
-            color_btn.pack(side="left", padx=2)
+            color_btn.pack(side="left", padx=5)
             
             label_var = tk.StringVar(value=roi_name)
-            ctk.CTkEntry(name_row, textvariable=label_var, width=80, height=20).pack(side="left", padx=2)
+            ctk.CTkEntry(name_row, textvariable=label_var, width=100, height=25).pack(side="left", padx=5)
             
-            # Properties
+            # Properties row
             props_row = ctk.CTkFrame(trace_frame)
             props_row.pack(fill="x", padx=3, pady=1)
             
-            ctk.CTkLabel(props_row, text="W:", width=20).pack(side="left")
+            # Line width
+            ctk.CTkLabel(props_row, text="Width:", width=40).pack(side="left")
             linewidth_var = tk.DoubleVar(value=2.0)
-            ctk.CTkSlider(props_row, from_=0.5, to=5.0, variable=linewidth_var, width=40).pack(side="left")
+            ctk.CTkSlider(props_row, from_=0.5, to=5.0, variable=linewidth_var, width=60).pack(side="left", padx=2)
             
-            ctk.CTkLabel(props_row, text="S:", width=20).pack(side="left")
+            # Marker size
+            ctk.CTkLabel(props_row, text="Size:", width=35).pack(side="left")
             markersize_var = tk.DoubleVar(value=6.0)
-            ctk.CTkSlider(props_row, from_=2, to=12, variable=markersize_var, width=40).pack(side="left")
+            ctk.CTkSlider(props_row, from_=2, to=12, variable=markersize_var, width=60).pack(side="left", padx=2)
             
+            # Line style and marker
+            style_row = ctk.CTkFrame(trace_frame)
+            style_row.pack(fill="x", padx=3, pady=1)
+            
+            ctk.CTkLabel(style_row, text="Style:", width=40).pack(side="left")
             linestyle_var = tk.StringVar(value='-')
-            ctk.CTkComboBox(props_row, values=['-', '--', '-.', ':'], 
-                           variable=linestyle_var, width=50).pack(side="left", padx=2)
+            ctk.CTkComboBox(style_row, values=['-', '--', '-.', ':'], 
+                        variable=linestyle_var, width=60).pack(side="left", padx=2)
             
+            ctk.CTkLabel(style_row, text="Marker:", width=50).pack(side="left")
             marker_var = tk.StringVar(value=default_markers[i % len(default_markers)])
-            ctk.CTkComboBox(props_row, values=['o', 's', '^', 'v', 'D', '*', '+'], 
-                           variable=marker_var, width=40).pack(side="left")
+            ctk.CTkComboBox(style_row, values=marker_options,  # Now includes 'none'
+                        variable=marker_var, width=60).pack(side="left", padx=2)
             
             # Store controls
             self.trace_controls[roi_name] = {
@@ -350,6 +384,86 @@ class ROIFramePlottingDialog:
                 'marker_var': marker_var,
                 'markersize_var': markersize_var
             }
+        
+        # Separator
+        separator = ctk.CTkFrame(traces_scroll, height=2)
+        separator.pack(fill="x", padx=2, pady=10)
+        
+        # Average Trace Settings Section
+        avg_trace_frame = ctk.CTkFrame(traces_scroll)
+        avg_trace_frame.pack(fill="x", padx=2, pady=2)
+        
+        # Average trace header
+        avg_header_frame = ctk.CTkFrame(avg_trace_frame)
+        avg_header_frame.pack(fill="x", padx=3, pady=1)
+        ctk.CTkLabel(avg_header_frame, text="📈 Average Trace", 
+                    font=ctk.CTkFont(weight="bold", size=12)).pack(side="left")
+        
+        # Initialize average trace settings
+        if not hasattr(self, 'avg_trace_settings'):
+            self.avg_trace_settings = {
+                'color': '#FF0000',  # Red for average
+                'label': 'Average',
+                'visible': True,
+                'linewidth': 3.0,
+                'linestyle': '-',
+                'marker': 'o',
+                'markersize': 8
+            }
+        
+        # Average trace visibility and color
+        avg_name_row = ctk.CTkFrame(avg_trace_frame)
+        avg_name_row.pack(fill="x", padx=3, pady=1)
+        
+        avg_visible_var = tk.BooleanVar(value=self.avg_trace_settings['visible'])
+        ctk.CTkCheckBox(avg_name_row, text="Show", variable=avg_visible_var, width=50).pack(side="left")
+        
+        avg_color_btn = ctk.CTkButton(avg_name_row, text="Color", width=60, height=25,
+                                    fg_color=self.avg_trace_settings['color'],
+                                    command=self._choose_avg_color)
+        avg_color_btn.pack(side="left", padx=5)
+        
+        avg_label_var = tk.StringVar(value=self.avg_trace_settings['label'])
+        ctk.CTkEntry(avg_name_row, textvariable=avg_label_var, width=100, height=25).pack(side="left", padx=5)
+        
+        # Average trace properties
+        avg_props_row = ctk.CTkFrame(avg_trace_frame)
+        avg_props_row.pack(fill="x", padx=3, pady=1)
+        
+        # Line width
+        ctk.CTkLabel(avg_props_row, text="Width:", width=40).pack(side="left")
+        avg_linewidth_var = tk.DoubleVar(value=self.avg_trace_settings['linewidth'])
+        ctk.CTkSlider(avg_props_row, from_=0.5, to=5.0, variable=avg_linewidth_var, width=60).pack(side="left", padx=2)
+        
+        # Marker size
+        ctk.CTkLabel(avg_props_row, text="Size:", width=35).pack(side="left")
+        avg_markersize_var = tk.DoubleVar(value=self.avg_trace_settings['markersize'])
+        ctk.CTkSlider(avg_props_row, from_=2, to=12, variable=avg_markersize_var, width=60).pack(side="left", padx=2)
+        
+        # Average trace style and marker
+        avg_style_row = ctk.CTkFrame(avg_trace_frame)
+        avg_style_row.pack(fill="x", padx=3, pady=1)
+        
+        ctk.CTkLabel(avg_style_row, text="Style:", width=40).pack(side="left")
+        avg_linestyle_var = tk.StringVar(value=self.avg_trace_settings['linestyle'])
+        ctk.CTkComboBox(avg_style_row, values=['-', '--', '-.', ':'], 
+                    variable=avg_linestyle_var, width=60).pack(side="left", padx=2)
+        
+        ctk.CTkLabel(avg_style_row, text="Marker:", width=50).pack(side="left")
+        avg_marker_var = tk.StringVar(value=self.avg_trace_settings['marker'])
+        ctk.CTkComboBox(avg_style_row, values=marker_options,  # Includes 'none'
+                    variable=avg_marker_var, width=60).pack(side="left", padx=2)
+        
+        # Store average trace controls
+        self.avg_trace_controls = {
+            'visible_var': avg_visible_var,
+            'color_btn': avg_color_btn,
+            'label_var': avg_label_var,
+            'linewidth_var': avg_linewidth_var,
+            'linestyle_var': avg_linestyle_var,
+            'marker_var': avg_marker_var,
+            'markersize_var': avg_markersize_var
+        }
 
     def _create_export_section(self):
         """Create export controls with metadata options"""
@@ -522,8 +636,9 @@ class ROIFramePlottingDialog:
                     'averages': averages
                 }
 
+
     def _plot_data(self):
-        """Create the plot with current data"""
+        """Create the plot with current data - FIXED with proper average plotting"""
         try:
             # Get selected ROIs
             selected_rois = [roi_name for roi_name, var in self.roi_checkboxes.items() if var.get()]
@@ -541,7 +656,7 @@ class ROIFramePlottingDialog:
             
             plotted_count = 0
             
-            # Plot individual ROIs
+            # Plot individual ROIs (for separate and both modes)
             if plot_mode in ["separate", "both"]:
                 for roi_name in selected_rois:
                     if roi_name not in self.plot_data:
@@ -561,12 +676,66 @@ class ROIFramePlottingDialog:
                         label=settings['label'],
                         linewidth=settings['linewidth'],
                         linestyle=settings['linestyle'],
-                        marker=settings['marker'],
+                        marker=settings['marker'] if settings['marker'] != 'none' else '',
                         markersize=settings['markersize'],
                         alpha=0.8
                     )
                     plotted_count += 1
             
+            # Plot average of all selected ROIs (for average and both modes)
+            if plot_mode in ["average", "both"]:
+                # Calculate average across all selected ROIs
+                avg_frame_numbers = []
+                avg_values = []
+                
+                # Get all unique frame numbers from selected ROIs
+                all_frames = set()
+                for roi_name in selected_rois:
+                    if roi_name in self.plot_data and self.plot_data[roi_name]['frame_numbers']:
+                        all_frames.update(self.plot_data[roi_name]['frame_numbers'])
+                
+                all_frames = sorted(all_frames)
+                
+                # For each frame, calculate the average value across all selected ROIs
+                for frame_num in all_frames:
+                    frame_values = []
+                    for roi_name in selected_rois:
+                        if roi_name in self.plot_data:
+                            data = self.plot_data[roi_name]
+                            if frame_num in data['frame_numbers']:
+                                idx = data['frame_numbers'].index(frame_num)
+                                frame_values.append(data['averages'][idx])
+                    
+                    if frame_values:  # Only add if we have at least one value for this frame
+                        avg_frame_numbers.append(frame_num)
+                        avg_values.append(np.mean(frame_values))
+                
+                # Plot the average trace if we have data
+                if avg_frame_numbers and avg_values:
+                    # Use average trace settings if they exist
+                    avg_settings = getattr(self, 'avg_trace_settings', {
+                        'color': '#FF0000',  # Red for average
+                        'linewidth': 3.0,
+                        'linestyle': '-',
+                        'marker': 'o',
+                        'markersize': 8,
+                        'visible': True
+                    })
+                    
+                    if avg_settings.get('visible', True):
+                        self.subplot.plot(
+                            avg_frame_numbers, avg_values,
+                            color=avg_settings['color'],
+                            label=f'Average of {len(selected_rois)} ROIs',
+                            linewidth=avg_settings['linewidth'],
+                            linestyle=avg_settings['linestyle'],
+                            marker=avg_settings['marker'] if avg_settings['marker'] != 'none' else '',
+                            markersize=avg_settings['markersize'],
+                            alpha=0.9
+                        )
+                        plotted_count += 1
+            
+            # Handle case where no data was plotted
             if plotted_count == 0:
                 self.subplot.text(0.5, 0.5, 'No data to plot\nCheck ROI selection and visibility',
                                 ha='center', va='center', fontsize=12)
@@ -574,9 +743,12 @@ class ROIFramePlottingDialog:
                 return
             
             # Apply settings
-            self.subplot.set_title(self.title_var.get(), fontsize=14, fontweight='bold')
-            self.subplot.set_xlabel(self.xlabel_var.get(), fontsize=12)
-            self.subplot.set_ylabel(self.ylabel_var.get(), fontsize=12)
+            self.subplot.set_title(self.title_var.get(), fontsize=self.title_font_size_var.get(), fontweight='bold')
+            self.subplot.set_xlabel(self.xlabel_var.get(), fontsize=self.axis_label_font_size_var.get())
+            self.subplot.set_ylabel(self.ylabel_var.get(), fontsize=self.axis_label_font_size_var.get())
+            
+            # Set axis tick font sizes
+            self.subplot.tick_params(axis='both', which='major', labelsize=self.axis_values_font_size_var.get())
             
             # Grid
             if self.grid_var.get():
@@ -597,9 +769,10 @@ class ROIFramePlottingDialog:
                 except:
                     pass
             
-            # Legend
+            # Legend with customizable size
             if plotted_count > 0:
-                self.subplot.legend(loc=self.legend_location_var.get(), fontsize=10)
+                legend_font_size = getattr(self, 'legend_font_size_var', tk.DoubleVar(value=10)).get()
+                self.subplot.legend(loc=self.legend_location_var.get(), fontsize=legend_font_size)
             
             # Update canvas
             self.figure.tight_layout()
@@ -836,6 +1009,69 @@ class ROIFramePlottingDialog:
             except:
                 pass
         self.dialog.destroy()
+    def _choose_color(self, roi_name):
+        """Choose color for individual ROI trace"""
+        current_color = self.trace_custom[roi_name]['color']
+        color = colorchooser.askcolor(color=current_color, title=f"Color for {roi_name}")
+        if color[1]:
+            self.trace_custom[roi_name]['color'] = color[1]
+            self.trace_controls[roi_name]['color_btn'].configure(fg_color=color[1])
+
+    def _choose_avg_color(self):
+        """Choose color for average trace"""
+        current_color = self.avg_trace_settings['color']
+        color = colorchooser.askcolor(color=current_color, title="Color for Average Trace")
+        if color[1]:
+            self.avg_trace_settings['color'] = color[1]
+            self.avg_trace_controls['color_btn'].configure(fg_color=color[1])
+
+    def _update_trace_settings(self):
+        """Update trace settings from UI - Enhanced for average traces"""
+        # Update individual ROI trace settings
+        for roi_name, controls in self.trace_controls.items():
+            if roi_name in self.trace_custom:
+                try:
+                    self.trace_custom[roi_name]['visible'] = controls['visible_var'].get()
+                    self.trace_custom[roi_name]['label'] = controls['label_var'].get()
+                    self.trace_custom[roi_name]['linewidth'] = controls['linewidth_var'].get()
+                    self.trace_custom[roi_name]['linestyle'] = controls['linestyle_var'].get()
+                    self.trace_custom[roi_name]['marker'] = controls['marker_var'].get()
+                    self.trace_custom[roi_name]['markersize'] = controls['markersize_var'].get()
+                except Exception as e:
+                    print(f"Error updating settings for {roi_name}: {e}")
+        
+        # Update average trace settings if they exist
+        if hasattr(self, 'avg_trace_controls') and hasattr(self, 'avg_trace_settings'):
+            try:
+                self.avg_trace_settings['visible'] = self.avg_trace_controls['visible_var'].get()
+                self.avg_trace_settings['label'] = self.avg_trace_controls['label_var'].get()
+                self.avg_trace_settings['linewidth'] = self.avg_trace_controls['linewidth_var'].get()
+                self.avg_trace_settings['linestyle'] = self.avg_trace_controls['linestyle_var'].get()
+                self.avg_trace_settings['marker'] = self.avg_trace_controls['marker_var'].get()
+                self.avg_trace_settings['markersize'] = self.avg_trace_controls['markersize_var'].get()
+            except Exception as e:
+                print(f"Error updating average trace settings: {e}")
+
+    def _toggle_axis_controls(self):
+        """Toggle manual axis controls based on auto axis setting"""
+        if self.auto_axis_var.get():
+            # Disable manual controls
+            for widget in self.manual_axis_frame.winfo_children():
+                for child in widget.winfo_children():
+                    if hasattr(child, 'configure'):
+                        try:
+                            child.configure(state="disabled")
+                        except:
+                            pass
+        else:
+            # Enable manual controls
+            for widget in self.manual_axis_frame.winfo_children():
+                for child in widget.winfo_children():
+                    if hasattr(child, 'configure'):
+                        try:
+                            child.configure(state="normal")
+                        except:
+                            pass
 
 
 def create_plotting_dialog(parent, array_handler, roi_selector, current_items):
