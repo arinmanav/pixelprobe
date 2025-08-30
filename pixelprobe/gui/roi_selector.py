@@ -460,7 +460,7 @@ class ROISelector:
                 (interior_x - 0.5, interior_y - 0.5), interior_w, interior_h,
                 fill=True,
                 facecolor=roi.color,
-                alpha=0.15,  # Light fill to show selected area
+                alpha=0,  # Light fill to show selected area
                 edgecolor=roi.color,
                 linewidth=1,
                 linestyle='-'
@@ -500,7 +500,7 @@ class ROISelector:
                 f"START\n({first_pixel['x']}, {first_pixel['y']})",
                 (boundary_start_x, boundary_start_y),  # Use boundary corner as reference
                 xytext=(-50, 0), textcoords='offset points',  # Far left of boundary
-                fontsize=8, color='green', weight='bold',
+                fontsize=12, color='green', weight='bold',
                 ha='center', va='center',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='green', alpha=0.9)
             )
@@ -510,7 +510,7 @@ class ROISelector:
                 f"END\n({last_pixel['x']}, {last_pixel['y']})",
                 (boundary_end_x, boundary_end_y),  # Use boundary corner as reference
                 xytext=(50, 0), textcoords='offset points',  # Far right of boundary
-                fontsize=8, color='red', weight='bold',
+                fontsize=12, color='red', weight='bold',
                 ha='center', va='center',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='red', alpha=0.9)
             )
@@ -519,8 +519,8 @@ class ROISelector:
             self.subplot.annotate(
                 f"{interior_w}×{interior_h}px",
                 (boundary_end_x, boundary_start_y),  # Top-right corner
-                xytext=(5, -20), textcoords='offset points',  # Outside above-right
-                fontsize=10, color=roi.color, weight='bold',
+                xytext=(20, 5), textcoords='offset points',  # Outside above-right
+                fontsize=12, color=roi.color, weight='bold',
                 ha='left', va='bottom',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor=roi.color, alpha=0.9)
             )
@@ -544,7 +544,7 @@ class ROISelector:
                 f"({x}, {y})",
                 (x, y),
                 xytext=(10, 10), textcoords='offset points',
-                fontsize=9, color=roi.color,
+                fontsize=12, color=roi.color,
                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
             )
         

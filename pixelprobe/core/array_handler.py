@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Any
 import logging
 import h5py
+import re
 
 
 class ArrayHandler:
@@ -72,12 +73,30 @@ class ArrayHandler:
                 item_num = self._extract_item_number(file_path)
                 if item_num is not None:
                     item_numbers.add(item_num)
+                    # Debug: Print what we're finding
+                    self.logger.debug(f"Found item {item_num} from file: {file_path.name}")
+                else:
+                    # Debug: Print files we couldn't parse
+                    self.logger.debug(f"Could not extract item number from: {file_path.name}")
         
-        return sorted(list(item_numbers))
+        sorted_items = sorted(list(item_numbers))
+        
+        # Debug: Print summary of what was found
+        if sorted_items:
+            self.logger.info(f"Found items range: {sorted_items[0]} to {sorted_items[-1]} (total: {len(sorted_items)} items)")
+            
+            # Check for gaps in the sequence for debugging
+            if len(sorted_items) > 1:
+                expected_count = sorted_items[-1] - sorted_items[0] + 1
+                if len(sorted_items) != expected_count:
+                    missing_count = expected_count - len(sorted_items)
+                    self.logger.warning(f"Missing {missing_count} items in sequence from {sorted_items[0]} to {sorted_items[-1]}")
+        
+        return sorted_items
     
     def _extract_item_number(self, file_path: Path) -> Optional[int]:
         """
-        Extract item number from filename
+        Extract item number from filename - FIXED VERSION
         
         Args:
             file_path: Path to array file
@@ -88,17 +107,20 @@ class ArrayHandler:
         try:
             filename = file_path.stem
             
-            # Try different naming patterns
+            # Try different naming patterns in specific order
+            # Pattern 1: item_XXXX (handles item_0001, item_1300, etc.)
+            # Pattern 2: Just numbers (001.npy, 1300.npy)
             patterns = [
-                r'item_(\d+)',  # item_001.npy
-                r'(\d+)',       # 001.npy
+                r'item_(\d+)',      # item_001.npy, item_1300.npy, item_0001.npy
+                r'^(\d+)$',         # 001.npy, 1300.npy (filename is only digits)
             ]
             
-            import re
             for pattern in patterns:
                 match = re.search(pattern, filename)
                 if match:
-                    return int(match.group(1))
+                    item_number = int(match.group(1))
+                    # Accept all valid item numbers - no artificial filtering
+                    return item_number
             
             return None
             
@@ -122,14 +144,13 @@ class ArrayHandler:
             Numpy array or None if loading failed
         """
         try:
-            
             # Check cache first
             if not force_reload and item_number in self.loaded_arrays:
                 self.logger.debug(f"Using cached array for item {item_number}")
                 return self.loaded_arrays[item_number]
             
             if item_number not in self.available_items:
-                self.logger.error(f"Item {item_number} not available")
+                self.logger.error(f"Item {item_number} not available. Available items: {len(self.available_items)} items from {min(self.available_items) if self.available_items else 'N/A'} to {max(self.available_items) if self.available_items else 'N/A'}")
                 return None
             
             # Find the file for this item
@@ -162,31 +183,47 @@ class ArrayHandler:
         if not self.current_directory:
             return None
         
-        # Try different naming patterns
+        # Try different naming patterns - comprehensive list
         patterns = [
-            f"item_{item_number:03d}.npy",
-            f"item_{item_number:03d}.npz",
-            f"item_{item_number:03d}.h5",
-            f"item_{item_number:03d}.hdf5",
-            f"item_{item_number}.npy",
-            f"item_{item_number}.npz",
-            f"item_{item_number}.h5",
-            f"item_{item_number}.hdf5",
-            f"{item_number:03d}.npy",
-            f"{item_number:03d}.npz",
-            f"{item_number:03d}.h5",
-            f"{item_number:03d}.hdf5",
-            f"{item_number}.npy",
-            f"{item_number}.npz",
-            f"{item_number}.h5",
-            f"{item_number}.hdf5"
+            # With zero padding (most common)
+            f"item_{item_number:04d}.npy",  # item_0001.npy
+            f"item_{item_number:03d}.npy",  # item_001.npy
+            f"item_{item_number:04d}.npz",  # item_0001.npz
+            f"item_{item_number:03d}.npz",  # item_001.npz
+            f"item_{item_number:04d}.h5",   # item_0001.h5
+            f"item_{item_number:03d}.h5",   # item_001.h5
+            f"item_{item_number:04d}.hdf5", # item_0001.hdf5
+            f"item_{item_number:03d}.hdf5", # item_001.hdf5
+            
+            # Without zero padding
+            f"item_{item_number}.npy",      # item_1.npy
+            f"item_{item_number}.npz",      # item_1.npz
+            f"item_{item_number}.h5",       # item_1.h5
+            f"item_{item_number}.hdf5",     # item_1.hdf5
+            
+            # Just numbers
+            f"{item_number:04d}.npy",       # 0001.npy
+            f"{item_number:03d}.npy",       # 001.npy
+            f"{item_number:04d}.npz",       # 0001.npz
+            f"{item_number:03d}.npz",       # 001.npz
+            f"{item_number:04d}.h5",        # 0001.h5
+            f"{item_number:03d}.h5",        # 001.h5
+            f"{item_number:04d}.hdf5",      # 0001.hdf5
+            f"{item_number:03d}.hdf5",      # 001.hdf5
+            f"{item_number}.npy",           # 1.npy
+            f"{item_number}.npz",           # 1.npz
+            f"{item_number}.h5",            # 1.h5
+            f"{item_number}.hdf5"           # 1.hdf5
         ]
         
         for pattern in patterns:
             file_path = self.current_directory / pattern
             if file_path.exists():
+                self.logger.debug(f"Found file {pattern} for item {item_number}")
                 return file_path
         
+        # If no file found, log what files actually exist for debugging
+        self.logger.debug(f"No file found for item {item_number}. Tried patterns: {patterns[:5]}...")
         return None
     
     def _load_array_file(self, file_path: Path) -> Optional[np.ndarray]:
@@ -228,11 +265,21 @@ class ArrayHandler:
             Dictionary mapping item numbers to arrays
         """
         results = {}
+        failed_items = []
+        
+        self.logger.info(f"Loading {len(item_numbers)} items...")
+        
         for item_num in item_numbers:
             array_data = self.load_item(item_num)
             if array_data is not None:
                 results[item_num] = array_data
+            else:
+                failed_items.append(item_num)
         
+        if failed_items:
+            self.logger.warning(f"Failed to load {len(failed_items)} items: {failed_items[:10]}{'...' if len(failed_items) > 10 else ''}")
+        
+        self.logger.info(f"Successfully loaded {len(results)}/{len(item_numbers)} items")
         return results
     
     def average_items(self, item_numbers: List[int]) -> Optional[np.ndarray]:
@@ -295,3 +342,47 @@ class ArrayHandler:
             'total_memory_mb': total_memory / (1024 * 1024),
             'available_items': len(self.available_items)
         }
+    
+    def diagnose_missing_items(self, start_item: int = 1, end_item: int = 1300):
+        """
+        Diagnostic method to help debug missing items
+        
+        Args:
+            start_item: First item number to check
+            end_item: Last item number to check
+        """
+        self.logger.info(f"=== DIAGNOSING MISSING ITEMS FROM {start_item} TO {end_item} ===")
+        
+        if not self.current_directory:
+            self.logger.error("No directory set")
+            return
+        
+        # Check what files actually exist
+        all_files = list(self.current_directory.glob("*"))
+        self.logger.info(f"Total files in directory: {len(all_files)}")
+        
+        # Sample some filenames
+        sample_files = [f.name for f in all_files[:10]]
+        self.logger.info(f"Sample filenames: {sample_files}")
+        
+        # Check specific ranges
+        found_items = set(self.available_items)
+        missing_low = [i for i in range(start_item, 1000) if i not in found_items]
+        missing_high = [i for i in range(1000, end_item + 1) if i not in found_items]
+        
+        self.logger.info(f"Missing items 1-999: {len(missing_low)} (sample: {missing_low[:5]})")
+        self.logger.info(f"Missing items 1000-1300: {len(missing_high)} (sample: {missing_high[:5]})")
+        
+        # Check if files exist but aren't being recognized
+        test_items = [1, 100, 999, 1000, 1300]
+        for item_num in test_items:
+            self.logger.info(f"--- Testing item {item_num} ---")
+            patterns = [f"item_{item_num:04d}.npy", f"item_{item_num:03d}.npy", f"item_{item_num}.npy"]
+            for pattern in patterns:
+                file_path = self.current_directory / pattern
+                if file_path.exists():
+                    extracted = self._extract_item_number(file_path)
+                    self.logger.info(f"  File {pattern} exists, extracted number: {extracted}")
+                    break
+            else:
+                self.logger.info(f"  No file found for item {item_num}")
