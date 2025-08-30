@@ -165,20 +165,39 @@ class ROIFramePlottingDialog:
         ctk.CTkButton(roi_frame, text="PLOT DATA", command=self._plot_data,
                      font=ctk.CTkFont(size=12, weight="bold"), height=40,
                      fg_color="green").pack(pady=10)
-
+        
     def _create_plot_settings_section(self):
-        """Create enhanced plot settings with font and size options"""
+        """Create enhanced plot settings with proper validation for font size entries"""
         settings_frame = ctk.CTkFrame(self.control_scroll)
         settings_frame.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(settings_frame, text="Plot Settings", 
                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
         
+        # Helper function to validate numeric entries
+        def validate_numeric_entry(var, default_value):
+            """Validate and fix numeric entry values"""
+            try:
+                value = var.get()
+                if value == "" or value is None:
+                    var.set(default_value)
+                    return default_value
+                return float(value)
+            except (ValueError, tk.TclError):
+                var.set(default_value)
+                return default_value
+        
+        # Create validation command
+        def create_validation_callback(var, default_val):
+            def callback(*args):
+                validate_numeric_entry(var, default_val)
+            return callback
+        
         # Basic labels with font size controls
         labels_data = [
             ("Title:", "title_var", "ROI Average vs Frame Number", "title_font_size_var", 16),
             ("X-Label:", "xlabel_var", "Frame Number", "axis_label_font_size_var", 12),
-            ("Y-Label:", "ylabel_var", "Average Pixel Value", "axis_label_font_size_var", 12)
+            ("Y-Label:", "ylabel_var", "Average Pixel Value", None, None)  # Y-label shares axis_label_font_size_var
         ]
         
         for i, (label_text, var_name, default, size_var_name, default_size) in enumerate(labels_data):
@@ -192,10 +211,15 @@ class ROIFramePlottingDialog:
             entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
             setattr(self, var_name, var)
             
-            # Font size control (only create once for axis labels)
-            if size_var_name and (i == 0 or size_var_name not in [getattr(self, attr, None) for attr in dir(self)]):
+            # Font size control (create only once for each unique size variable)
+            if size_var_name and not hasattr(self, size_var_name):
                 ctk.CTkLabel(row, text="Size:", width=35).pack(side="left")
-                size_var = tk.DoubleVar(value=default_size)
+                size_var = tk.StringVar(value=str(default_size))  # Use StringVar instead of DoubleVar
+                
+                # Add validation callback
+                validation_callback = create_validation_callback(size_var, default_size)
+                size_var.trace_add('write', validation_callback)
+                
                 size_entry = ctk.CTkEntry(row, textvariable=size_var, width=50, height=28)
                 size_entry.pack(side="left", padx=(0, 5))
                 setattr(self, size_var_name, size_var)
@@ -204,7 +228,11 @@ class ROIFramePlottingDialog:
         axis_values_row = ctk.CTkFrame(settings_frame)
         axis_values_row.pack(fill="x", padx=8, pady=2)
         ctk.CTkLabel(axis_values_row, text="Axis Values Size:", width=120).pack(side="left", padx=(5, 5))
-        self.axis_values_font_size_var = tk.DoubleVar(value=10)
+        
+        self.axis_values_font_size_var = tk.StringVar(value="10")  # Use StringVar
+        axis_values_validation = create_validation_callback(self.axis_values_font_size_var, 10)
+        self.axis_values_font_size_var.trace_add('write', axis_values_validation)
+        
         axis_values_entry = ctk.CTkEntry(axis_values_row, textvariable=self.axis_values_font_size_var, width=50, height=28)
         axis_values_entry.pack(side="left", padx=(0, 5))
         
@@ -280,9 +308,12 @@ class ROIFramePlottingDialog:
                                             'upper center', 'lower center', 'center'],
                     variable=self.legend_location_var, width=120).pack(side="left", padx=5)
         
-        # Legend font size
+        # Legend font size with validation
         ctk.CTkLabel(legend_frame, text="Size:", width=35).pack(side="left")
-        self.legend_font_size_var = tk.DoubleVar(value=10)
+        self.legend_font_size_var = tk.StringVar(value="10")  # Use StringVar
+        legend_validation = create_validation_callback(self.legend_font_size_var, 10)
+        self.legend_font_size_var.trace_add('write', legend_validation)
+        
         legend_size_entry = ctk.CTkEntry(legend_frame, textvariable=self.legend_font_size_var, width=50, height=28)
         legend_size_entry.pack(side="left", padx=(0, 5))
         
@@ -636,9 +667,8 @@ class ROIFramePlottingDialog:
                     'averages': averages
                 }
 
-
     def _plot_data(self):
-        """Create the plot with current data - FIXED with proper average plotting"""
+        """Create the plot with current data - FIXED with proper average plotting and StringVar handling"""
         try:
             # Get selected ROIs
             selected_rois = [roi_name for roi_name, var in self.roi_checkboxes.items() if var.get()]
@@ -742,13 +772,30 @@ class ROIFramePlottingDialog:
                 self.canvas.draw()
                 return
             
-            # Apply settings
-            self.subplot.set_title(self.title_var.get(), fontsize=self.title_font_size_var.get(), fontweight='bold')
-            self.subplot.set_xlabel(self.xlabel_var.get(), fontsize=self.axis_label_font_size_var.get())
-            self.subplot.set_ylabel(self.ylabel_var.get(), fontsize=self.axis_label_font_size_var.get())
+            # Helper function to safely get numeric values from StringVar or DoubleVar
+            def safe_get_numeric(var, default):
+                try:
+                    if hasattr(var, 'get'):
+                        value = var.get()
+                        if isinstance(value, str):
+                            return float(value) if value.strip() != "" else default
+                        return float(value)
+                    return default
+                except (ValueError, tk.TclError, AttributeError):
+                    return default
+            
+            # Apply settings with safe numeric conversion
+            title_font_size = safe_get_numeric(getattr(self, 'title_font_size_var', None), 16)
+            axis_label_font_size = safe_get_numeric(getattr(self, 'axis_label_font_size_var', None), 12)
+            axis_values_font_size = safe_get_numeric(getattr(self, 'axis_values_font_size_var', None), 10)
+            legend_font_size = safe_get_numeric(getattr(self, 'legend_font_size_var', None), 10)
+            
+            self.subplot.set_title(self.title_var.get(), fontsize=title_font_size, fontweight='bold')
+            self.subplot.set_xlabel(self.xlabel_var.get(), fontsize=axis_label_font_size)
+            self.subplot.set_ylabel(self.ylabel_var.get(), fontsize=axis_label_font_size)
             
             # Set axis tick font sizes
-            self.subplot.tick_params(axis='both', which='major', labelsize=self.axis_values_font_size_var.get())
+            self.subplot.tick_params(axis='both', which='major', labelsize=axis_values_font_size)
             
             # Grid
             if self.grid_var.get():
@@ -771,7 +818,6 @@ class ROIFramePlottingDialog:
             
             # Legend with customizable size
             if plotted_count > 0:
-                legend_font_size = getattr(self, 'legend_font_size_var', tk.DoubleVar(value=10)).get()
                 self.subplot.legend(loc=self.legend_location_var.get(), fontsize=legend_font_size)
             
             # Update canvas

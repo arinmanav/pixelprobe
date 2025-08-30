@@ -84,12 +84,22 @@ class PixelProbeApp:
         self.colorbar_vmax = None  # Manual maximum value
         self.current_colorbar = None  # Store current colorbar object for removal
 
+        # Colorbar customization settings - NEW
+        self.colorbar_tick_fontsize = 12  # Larger default font size for colorbar values
+        self.colorbar_label = ""  # Colorbar label text
+        self.colorbar_label_fontsize = 14  # Font size for colorbar label
+
         # UI references for inline controls (will be set in create_widgets)
         self.colormap_dropdown = None
         self.colorbar_checkbox = None
         self.range_mode_dropdown = None
         self.min_value_entry = None
         self.max_value_entry = None
+        
+        # UI references for colorbar customization - NEW
+        self.colorbar_label_entry = None
+        self.colorbar_tick_font_entry = None
+        self.colorbar_label_font_entry = None
 
         # NOW create widgets (after all variables are initialized)
         self.create_widgets()
@@ -990,44 +1000,99 @@ class PixelProbeApp:
             self._activate_roi_mode()
 
     def _activate_roi_mode(self):
-        """Activate ROI selection mode"""
+        """Activate ROI selection mode with proper initialization"""
         if self.current_image is None:
             self.update_status("Please load an image first")
+            messagebox.showinfo("No Image", "Please load an image before enabling ROI mode")
             return
         
-        self.roi_mode_active = True
-        
-        # Initialize ROI selector if not exists
-        if self.roi_selector is None:
-            self.roi_selector = ROISelector(self.figure, self.subplot, self.update_status)
-        
-        # Activate selection
-        self.roi_selector.activate_selection()
-        
-        # Update UI
-        self.roi_mode_btn.configure(text="Disable ROI Mode", fg_color=["#ff6b35", "#e85a31"])
-        self.roi_rect_btn.configure(state="normal")
-        self.roi_point_btn.configure(state="normal")
-        self.roi_clear_btn.configure(state="normal")
-        
-        # Set default to rectangle
-        self.set_rectangle_roi()
-        
-        self.update_status("ROI mode activated - Rectangle selection ready (pixel-perfect)")
+        try:
+            # Create ROI selector if it doesn't exist or needs reinitialization
+            if not self.roi_selector:
+                self.roi_selector = ROISelector(
+                    self.figure, 
+                    self.subplot, 
+                    status_callback=self.update_status
+                )
+                self.logger.info("ROI selector created")
+            
+            # Check if ROI selector's subplot reference is still valid
+            elif self.roi_selector.subplot != self.subplot:
+                self.logger.info("ROI selector subplot reference outdated, reinitializing...")
+                # Store existing ROIs
+                existing_rois = self.roi_selector.rois.copy() if self.roi_selector.rois else []
+                current_roi_type = self.roi_selector.current_roi_type
+                
+                # Deactivate current selection
+                if self.roi_selector.selection_active:
+                    self.roi_selector.deactivate_selection()
+                
+                # Reinitialize ROI selector
+                self.roi_selector = ROISelector(
+                    self.figure, 
+                    self.subplot, 
+                    status_callback=self.update_status
+                )
+                
+                # Restore ROIs and type
+                if existing_rois:
+                    self.roi_selector.rois = existing_rois
+                    # Redraw existing ROIs
+                    for roi in existing_rois:
+                        try:
+                            self.roi_selector._visualize_roi(roi)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to restore ROI {roi.label}: {e}")
+                if current_roi_type:
+                    self.roi_selector.set_roi_type(current_roi_type)
+            
+            # Enable ROI mode
+            self.roi_mode_active = True
+            
+            # Activate selection
+            self.roi_selector.activate_selection()
+            
+            # Update UI
+            self.roi_mode_btn.configure(text="Disable ROI Mode", fg_color=["#ff6b35", "#e85a31"])
+            self.roi_rect_btn.configure(state="normal")
+            self.roi_point_btn.configure(state="normal")
+            self.roi_clear_btn.configure(state="normal")
+            
+            # Set default to rectangle
+            self.set_rectangle_roi()
+            
+            self.update_status("ROI mode activated - Rectangle selection ready (pixel-perfect)")
+            self.logger.info("ROI mode activated successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to activate ROI mode: {e}")
+            self.update_status(f"ROI activation failed: {str(e)}")
+            messagebox.showerror("ROI Error", f"Failed to activate ROI mode:\n{str(e)}")
 
     def _deactivate_roi_mode(self):
-        """Deactivate ROI selection mode"""
-        if self.roi_selector:
-            self.roi_selector.deactivate_selection()
-        
-        self.roi_mode_active = False
-        
-        self.roi_mode_btn.configure(text="Enable ROI Mode", fg_color="gray")
-        self.roi_rect_btn.configure(state="disabled")
-        self.roi_point_btn.configure(state="disabled")
-        self.roi_clear_btn.configure(state="disabled")
-        
-        self.update_status("ROI mode deactivated")
+        """Deactivate ROI selection mode with proper cleanup"""
+        try:
+            self.roi_mode_active = False
+            
+            if self.roi_selector:
+                # Deactivate selection with proper cleanup
+                self.roi_selector.deactivate_selection()
+            
+            # Update UI - Note: looking at the code, it seems like there's no circle button in the current version
+            self.roi_mode_btn.configure(text="Enable ROI Mode", fg_color="gray")
+            self.roi_rect_btn.configure(state="disabled")
+            self.roi_point_btn.configure(state="disabled")
+            self.roi_clear_btn.configure(state="disabled")
+            
+            # Reset button colors to default
+            self._update_roi_button_colors("none")
+            
+            self.update_status("ROI mode deactivated")
+            self.logger.info("ROI mode deactivated")
+            
+        except Exception as e:
+            self.logger.error(f"Error deactivating ROI mode: {e}")
+            self.update_status(f"ROI deactivation error: {str(e)}")
 
     def set_rectangle_roi(self):
         """Set ROI selection to rectangle mode"""
@@ -1042,17 +1107,21 @@ class PixelProbeApp:
             self._update_roi_button_colors("point")
 
     def _update_roi_button_colors(self, active_type):
-        """Update ROI button colors to show active selection - Circle removed"""
+        """Update ROI button colors to show active selection"""
         default_color = ["#1f538d", "#14375e"]
         
+        # Reset all buttons to default
         self.roi_rect_btn.configure(fg_color=default_color)
         self.roi_point_btn.configure(fg_color=default_color)
         
-        active_color = ["#ff6b35", "#e85a31"]
-        if active_type == "rectangle":
-            self.roi_rect_btn.configure(fg_color=active_color)
-        elif active_type == "point":
-            self.roi_point_btn.configure(fg_color=active_color)
+        # Set active color if not deactivating
+        if active_type != "none":
+            active_color = ["#ff6b35", "#e85a31"]
+            if active_type == "rectangle":
+                self.roi_rect_btn.configure(fg_color=active_color)
+            elif active_type == "point":
+                self.roi_point_btn.configure(fg_color=active_color)
+
 
     def clear_rois(self):
         """Clear all ROIs"""
@@ -1085,27 +1154,31 @@ class PixelProbeApp:
         """Redraw a single ROI visual element"""
         try:
             if roi.roi_type == ROIType.RECTANGLE:
+                # Get selected area coordinates
+                x = int(round(roi.coordinates['x']))
+                y = int(round(roi.coordinates['y']))
+                w = int(round(roi.coordinates['width']))
+                h = int(round(roi.coordinates['height']))
+                
+                # Draw rectangle using pixel-centered coordinates
                 rect = patches.Rectangle(
-                    (roi.coordinates['x'], roi.coordinates['y']),
-                    roi.coordinates['width'],
-                    roi.coordinates['height'],
+                    (x - 0.5, y - 0.5), w, h,
                     fill=False,
                     edgecolor=roi.color,
                     linewidth=2.0,
                     alpha=0.8
                 )
                 self.subplot.add_patch(rect)
-            
-            elif roi.roi_type == ROIType.CIRCLE:
-                circle = patches.Circle(
-                    (roi.coordinates['cx'], roi.coordinates['cy']),
-                    roi.coordinates['radius'],
-                    fill=False,
-                    edgecolor=roi.color,
-                    linewidth=2.0,
-                    alpha=0.8
+                
+                # Add light fill to show selected area
+                fill_rect = patches.Rectangle(
+                    (x - 0.5, y - 0.5), w, h,
+                    fill=True,
+                    facecolor=roi.color,
+                    alpha=0.1,
+                    edgecolor='none'
                 )
-                self.subplot.add_patch(circle)
+                self.subplot.add_patch(fill_rect)
             
             elif roi.roi_type == ROIType.POINT:
                 # Enhanced point visualization
@@ -1150,7 +1223,7 @@ class PixelProbeApp:
             
         except Exception as e:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
-            
+
     def display_image(self, image_data: np.ndarray, title: str = "Image"):
         """Display image with colorbar and colormap support using original array values"""
         
@@ -1167,14 +1240,47 @@ class PixelProbeApp:
             
             # Store current ROIs if they exist
             existing_rois = []
+            roi_mode_was_active = False
+            current_roi_type = None
+            
             if self.roi_selector and self.roi_selector.rois:
                 existing_rois = self.roi_selector.rois.copy()
+                roi_mode_was_active = self.roi_mode_active
+                current_roi_type = self.roi_selector.current_roi_type
             
             # FIXED: Completely clear and recreate the figure to avoid sizing issues
             self.figure.clear()
             
             # FIXED: Create subplot with consistent positioning - always reserve space for potential colorbar
             self.subplot = self.figure.add_subplot(111)
+            
+            # CRITICAL FIX: Reinitialize ROI selector with new subplot
+            if self.roi_selector:
+                # Deactivate ROI selection to clean up old event handlers
+                if self.roi_selector.selection_active:
+                    self.roi_selector.deactivate_selection()
+                
+                # Create new ROI selector with new subplot
+                from pixelprobe.gui.roi_selector import ROISelector
+                self.roi_selector = ROISelector(
+                    self.figure, 
+                    self.subplot, 
+                    status_callback=self.update_status
+                )
+                
+                # Restore ROI mode state
+                if roi_mode_was_active:
+                    self.roi_mode_active = True
+                    if current_roi_type:
+                        self.roi_selector.set_roi_type(current_roi_type)
+                        # Update button colors to reflect current mode
+                        if current_roi_type.value == 'rectangle':
+                            self._update_roi_button_colors("rectangle")
+                        elif current_roi_type.value == 'point':
+                            self._update_roi_button_colors("point")
+                    
+                    # Reactivate ROI selection if it was active
+                    self.roi_selector.activate_selection()
             
             # Get current interpolation method
             interpolation = getattr(self, 'current_display_interpolation', 'nearest')
@@ -1210,69 +1316,42 @@ class PixelProbeApp:
                     cmap=self.current_colormap, 
                     aspect='equal',
                     interpolation=interpolation,
-                    vmin=vmin,
-                    vmax=vmax
+                    vmin=vmin, vmax=vmax
                 )
                 
-                # FIXED: Use make_axes_locatable to create colorbar without affecting main plot position
+                # Add colorbar if enabled
                 if self.show_colorbar:
-                    # Create divider for consistent positioning
                     divider = make_axes_locatable(self.subplot)
-                    # Create colorbar axis on the right, 5% of the plot width, with 0.1 inch pad
                     cax = divider.append_axes("right", size="5%", pad=0.1)
-                    
-                    self.current_colorbar = self.figure.colorbar(
-                        im, cax=cax,
-                        label=f'Pixel Values (Range: {vmin:.2f} - {vmax:.2f})'
-                    )
+                    cbar = self.figure.colorbar(im, cax=cax)
+                    cbar.ax.tick_params(labelsize=9)
+                    self.current_colorbar = cbar
                 else:
-                    # Even when no colorbar, maintain consistent subplot size by creating invisible space
-                    divider = make_axes_locatable(self.subplot)
-                    # Create the space but don't add colorbar - keeps plot position consistent
-                    cax = divider.append_axes("right", size="5%", pad=0.1)
-                    cax.set_visible(False)  # Hide the reserved space
-                    
+                    self.current_colorbar = None
+            
+            # For RGB images
             elif is_rgb:
-                # RGB image - display without colormap or colorbar
-                im = self.subplot.imshow(
-                    display_data, 
-                    aspect='equal', 
-                    interpolation=interpolation
-                )
-                # For RGB, still reserve space to keep positioning consistent across image types
-                divider = make_axes_locatable(self.subplot)
-                cax = divider.append_axes("right", size="5%", pad=0.1)
-                cax.set_visible(False)  # Hide the reserved space
-                
-            else:
-                # Fallback for other data shapes
-                im = self.subplot.imshow(
-                    display_data, 
-                    cmap=self.current_colormap, 
-                    aspect='equal',
-                    interpolation=interpolation
-                )
-                # Reserve space for consistency
-                divider = make_axes_locatable(self.subplot)
-                cax = divider.append_axes("right", size="5%", pad=0.1)
-                cax.set_visible(False)
+                im = self.subplot.imshow(display_data, aspect='equal', interpolation=interpolation)
+                self.current_colorbar = None  # No colorbar for RGB
             
-            # Set title and configure axes
-            self.subplot.set_title(title)
-            self.subplot.axis('on')  # Show axes for pixel coordinates
+            # Set title and labels
+            self.subplot.set_title(title, fontsize=14, fontweight='bold', pad=20)
             
-            # Set up pixel-perfect display
+            # Set axis limits to show complete image with proper orientation
             self.subplot.set_xlim(-0.5, display_data.shape[1] - 0.5)
             self.subplot.set_ylim(display_data.shape[0] - 0.5, -0.5)
             
             # FIXED: Use constrained layout instead of tight_layout for better colorbar handling
             self.figure.set_constrained_layout(True)
             
-            # Restore ROIs if they existed
+            # CRITICAL FIX: Restore ROIs AFTER ROI selector is properly reinitialized
             if existing_rois and self.roi_selector:
                 self.roi_selector.rois = existing_rois
                 for roi in existing_rois:
-                    self.roi_selector._visualize_roi(roi)
+                    try:
+                        self.roi_selector._visualize_roi(roi)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to restore ROI {roi.label}: {e}")
             
             # Refresh canvas
             self.canvas.draw()
@@ -1283,7 +1362,8 @@ class PixelProbeApp:
             
             # Log display information
             colorbar_info = "with colorbar" if (self.show_colorbar and is_grayscale) else "without colorbar"
-            self.logger.info(f"Image displayed {colorbar_info} using {self.current_colormap} colormap, {interpolation} interpolation: {display_data.shape}, {display_data.dtype}")
+            roi_info = f", {len(existing_rois)} ROIs restored" if existing_rois else ""
+            self.logger.info(f"Image displayed {colorbar_info} using {self.current_colormap} colormap, {interpolation} interpolation: {display_data.shape}, {display_data.dtype}{roi_info}")
             
         except Exception as e:
             self.logger.error(f"Failed to display image: {e}")
