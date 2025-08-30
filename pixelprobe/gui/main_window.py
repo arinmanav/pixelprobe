@@ -27,7 +27,7 @@ from pixelprobe.processing.interpolation import InterpolationProcessor
 
 class PixelProbeApp:
     """Main application window for PixelProbe"""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the PixelProbe application"""
         self.logger = logging.getLogger(__name__)
@@ -66,29 +66,49 @@ class PixelProbeApp:
         # Initialize main window
         self.root = ctk.CTk()
         self.setup_window()
-        self.create_widgets()
-
+        # NOTE: create_widgets() is called AFTER all these variables are set up
+        
         # Initialize processing
         self.denoiser = AdvancedDenoiseProcessor()
-
         self.interpolator = InterpolationProcessor()  # NEW PROCESSOR
         
         # Current interpolation settings - SIMPLIFIED
         self.current_display_interpolation = 'nearest'  # Single setting for all interpolation
         self.current_title = "Image"  # Track current image title
 
+        # NEW: Colormap and display settings - MUST BE BEFORE create_widgets()
+        self.current_colormap = 'gray'  # Default colormap
+        self.show_colorbar = True  # Whether to show colorbar
+        self.colorbar_range_mode = 'auto'  # 'auto' or 'manual'
+        self.colorbar_vmin = None  # Manual minimum value
+        self.colorbar_vmax = None  # Manual maximum value
+        self.current_colorbar = None  # Store current colorbar object for removal
+
+        # UI references for inline controls (will be set in create_widgets)
+        self.colormap_dropdown = None
+        self.colorbar_checkbox = None
+        self.range_mode_dropdown = None
+        self.min_value_entry = None
+        self.max_value_entry = None
+
+        # NOW create widgets (after all variables are initialized)
+        self.create_widgets()
 
         # Initialize analysis
         self.analyzer = StatisticalAnalyzer()
         
-        self.logger.info("PixelProbe application initialized")    
-    
+        self.logger.info("PixelProbe application initialized")
+
     def setup_window(self):
         """Configure the main window properties"""
         self.root.title("PixelProbe")
         
-        # Set window size from config
+        # Set window size from config with taller default
         width, height = map(int, self.config['window_size'].split('x'))
+        # Make window taller to accommodate the extended sidebar
+        height = max(height, 900)  # Ensure minimum height of 900px
+        width = max(width, 1300)   # Ensure minimum width of 1300px
+        
         self.root.geometry(f"{width}x{height}")
         
         # Center window on screen
@@ -102,17 +122,30 @@ class PixelProbeApp:
         self.root.grid_rowconfigure(0, weight=1)
         
         # Set minimum window size
-        self.root.minsize(800, 600)
+        self.root.minsize(1200, 850)  # Increased minimum size
+        
+        # FIXED: Add proper close handling
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.logger.debug(f"Window configured: {width}x{height}")
 
-
     def create_widgets(self):
-        """Create and arrange the main interface widgets with CustomTkinter compatibility"""
-        # Create sidebar frame
-        self.sidebar_frame = ctk.CTkFrame(self.root, width=200, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(17, weight=1)  # Updated for additional button
+        """Create and arrange the main interface widgets with scrollable sidebar"""
+        
+        # Create main sidebar container (fixed width)
+        self.sidebar_container = ctk.CTkFrame(self.root, width=250, corner_radius=0)
+        self.sidebar_container.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_container.grid_propagate(False)  # Maintain fixed width
+        self.sidebar_container.grid_columnconfigure(0, weight=1)
+        self.sidebar_container.grid_rowconfigure(0, weight=1)
+        
+        # Create scrollable frame inside the container
+        self.sidebar_frame = ctk.CTkScrollableFrame(
+            self.sidebar_container, 
+            width=230,  # Slightly smaller to account for scrollbar
+            corner_radius=0
+        )
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         
         # Sidebar title
         self.logo_label = ctk.CTkLabel(
@@ -120,22 +153,24 @@ class PixelProbeApp:
             text="PixelProbe",
             font=ctk.CTkFont(size=20, weight="bold")
         )
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        self.logo_label.pack(pady=(20, 10), padx=20)
         
         # Load buttons
         self.load_data_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Load Data",
-            command=self.load_data_action
+            command=self.load_data_action,
+            width=200
         )
-        self.load_data_btn.grid(row=1, column=0, padx=20, pady=10)
+        self.load_data_btn.pack(pady=5, padx=20)
         
         self.load_image_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Load Image", 
-            command=self.load_image_action
+            command=self.load_image_action,
+            width=200
         )
-        self.load_image_btn.grid(row=2, column=0, padx=20, pady=10)
+        self.load_image_btn.pack(pady=5, padx=20)
         
         # Processing section
         self.processing_label = ctk.CTkLabel(
@@ -143,76 +178,180 @@ class PixelProbeApp:
             text="Processing",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.processing_label.grid(row=3, column=0, padx=20, pady=(20, 10))
+        self.processing_label.pack(pady=(20, 10), padx=20)
         
         self.denoise_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Denoise",
-            command=self.denoise_action
+            command=self.denoise_action,
+            width=200
         )
-        self.denoise_btn.grid(row=4, column=0, padx=20, pady=5)
+        self.denoise_btn.pack(pady=2, padx=20)
         
         self.segment_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Segment",
-            command=self.segment_action
+            command=self.segment_action,
+            width=200
         )
-        self.segment_btn.grid(row=5, column=0, padx=20, pady=5)
+        self.segment_btn.pack(pady=2, padx=20)
 
         self.interpolation_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Interpolation",
-            command=self.interpolation_action
+            command=self.interpolation_action,
+            width=200
         )
-        self.interpolation_btn.grid(row=6, column=0, padx=20, pady=5)
+        self.interpolation_btn.pack(pady=2, padx=20)
         
-        # ROI Section - UPDATED ROW NUMBERS (+1 from original)
+        # Display section with INLINE controls
+        self.display_label = ctk.CTkLabel(
+            self.sidebar_frame,
+            text="Display",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        self.display_label.pack(pady=(20, 10), padx=20)
+        
+        # Create frame for display controls
+        self.display_controls_frame = ctk.CTkFrame(self.sidebar_frame)
+        self.display_controls_frame.pack(fill="x", padx=15, pady=5)
+        
+        # Colormap dropdown
+        ctk.CTkLabel(
+            self.display_controls_frame,
+            text="Colormap:",
+            font=ctk.CTkFont(size=12)
+        ).pack(anchor="w", padx=10, pady=(10, 2))
+        
+        self.colormap_dropdown = ctk.CTkOptionMenu(
+            self.display_controls_frame,
+            values=["gray", "viridis", "plasma", "inferno", "magma", "hot", "cool", "spring", 
+                    "summer", "autumn", "winter", "bone", "copper", "pink", "jet", "hsv", 
+                    "rainbow", "coolwarm", "bwr", "seismic", "cividis", "turbo"],
+            command=self.on_colormap_change,
+            width=180
+        )
+        self.colormap_dropdown.set(self.current_colormap)
+        self.colormap_dropdown.pack(padx=10, pady=(0, 8))
+        
+        # Colorbar toggle
+        self.colorbar_checkbox = ctk.CTkCheckBox(
+            self.display_controls_frame,
+            text="Show Colorbar",
+            command=self.on_colorbar_toggle,
+            font=ctk.CTkFont(size=12)
+        )
+        self.colorbar_checkbox.select() if self.show_colorbar else self.colorbar_checkbox.deselect()
+        self.colorbar_checkbox.pack(anchor="w", padx=10, pady=3)
+        
+        # Range mode selection
+        ctk.CTkLabel(
+            self.display_controls_frame,
+            text="Range Mode:",
+            font=ctk.CTkFont(size=12)
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+        
+        self.range_mode_dropdown = ctk.CTkOptionMenu(
+            self.display_controls_frame,
+            values=["auto", "manual"],
+            command=self.on_range_mode_change,
+            width=180
+        )
+        self.range_mode_dropdown.set(self.colorbar_range_mode)
+        self.range_mode_dropdown.pack(padx=10, pady=(0, 8))
+        
+        # Manual range inputs frame
+        self.manual_range_frame = ctk.CTkFrame(self.display_controls_frame)
+        self.manual_range_frame.pack(fill="x", padx=8, pady=(0, 8))
+        
+        ctk.CTkLabel(
+            self.manual_range_frame,
+            text="Min Value:",
+            font=ctk.CTkFont(size=11)
+        ).pack(anchor="w", padx=8, pady=(8, 2))
+        
+        self.min_value_entry = ctk.CTkEntry(
+            self.manual_range_frame,
+            placeholder_text="Auto",
+            font=ctk.CTkFont(size=11),
+            height=25,
+            width=170
+        )
+        self.min_value_entry.pack(padx=8, pady=(0, 5))
+        self.min_value_entry.bind("<KeyRelease>", self.on_manual_range_change)
+        
+        ctk.CTkLabel(
+            self.manual_range_frame,
+            text="Max Value:",
+            font=ctk.CTkFont(size=11)
+        ).pack(anchor="w", padx=8, pady=(2, 2))
+        
+        self.max_value_entry = ctk.CTkEntry(
+            self.manual_range_frame,
+            placeholder_text="Auto",
+            font=ctk.CTkFont(size=11),
+            height=25,
+            width=170
+        )
+        self.max_value_entry.pack(padx=8, pady=(0, 8))
+        self.max_value_entry.bind("<KeyRelease>", self.on_manual_range_change)
+        
+        # Initially disable manual range inputs if in auto mode
+        if self.colorbar_range_mode == 'auto':
+            self.min_value_entry.configure(state="disabled")
+            self.max_value_entry.configure(state="disabled")
+        
+        # ROI Section
         self.roi_label = ctk.CTkLabel(
             self.sidebar_frame,
             text="ROI Selection",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.roi_label.grid(row=8, column=0, padx=20, pady=(20, 10))  # Was row=7, now row=8
+        self.roi_label.pack(pady=(20, 10), padx=20)
         
         # ROI mode toggle
         self.roi_mode_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Enable ROI Mode",
             command=self.toggle_roi_mode,
-            fg_color="gray"
+            fg_color="gray",
+            width=200
         )
-        self.roi_mode_btn.grid(row=9, column=0, padx=20, pady=5)  # Was row=8, now row=9
+        self.roi_mode_btn.pack(pady=5, padx=20)
         
-        # ROI selection buttons
+        # ROI selection buttons frame
+        self.roi_buttons_frame = ctk.CTkFrame(self.sidebar_frame)
+        self.roi_buttons_frame.pack(fill="x", padx=15, pady=5)
+        
         self.roi_rect_btn = ctk.CTkButton(
-            self.sidebar_frame,
+            self.roi_buttons_frame,
             text="Rectangle",
             command=self.set_rectangle_roi,
             state="disabled",
-            width=120
+            width=85
         )
-        self.roi_rect_btn.grid(row=10, column=0, padx=20, pady=2)  # Was row=9, now row=10
+        self.roi_rect_btn.pack(side="left", padx=5, pady=5)
         
         self.roi_point_btn = ctk.CTkButton(
-            self.sidebar_frame,
+            self.roi_buttons_frame,
             text="Point",
             command=self.set_point_roi,
             state="disabled",
-            width=120
+            width=85
         )
-        self.roi_point_btn.grid(row=11, column=0, padx=20, pady=2)  # Was row=10, now row=11
+        self.roi_point_btn.pack(side="right", padx=5, pady=5)
         
-        # ROI management buttons
+        # ROI clear button
         self.roi_clear_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Clear ROIs",
             command=self.clear_rois,
             state="disabled",
-            width=120,
+            width=200,
             fg_color="red",
             hover_color="darkred"
         )
-        self.roi_clear_btn.grid(row=12, column=0, padx=20, pady=5)  # Was row=11, now row=12
+        self.roi_clear_btn.pack(pady=5, padx=20)
         
         # Analysis section
         self.analysis_label = ctk.CTkLabel(
@@ -220,31 +359,38 @@ class PixelProbeApp:
             text="Analysis",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        self.analysis_label.grid(row=13, column=0, padx=20, pady=(20, 10))  # Was row=12, now row=13
+        self.analysis_label.pack(pady=(20, 10), padx=20)
         
         self.plot_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Plot Data",
-            command=self.plot_action
+            command=self.plot_action,
+            width=200
         )
-        self.plot_btn.grid(row=14, column=0, padx=20, pady=5)  # Was row=13, now row=14
+        self.plot_btn.pack(pady=5, padx=20)
         
         self.stats_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Statistics", 
-            command=self.stats_action
+            command=self.stats_action,
+            width=200
         )
-        self.stats_btn.grid(row=15, column=0, padx=20, pady=5)  # Was row=14, now row=15
+        self.stats_btn.pack(pady=5, padx=20)
         
         # Theme toggle
         self.theme_btn = ctk.CTkButton(
             self.sidebar_frame,
             text="Toggle Theme",
-            command=self.toggle_theme
+            command=self.toggle_theme,
+            width=200
         )
-        self.theme_btn.grid(row=17, column=0, padx=20, pady=10)  # Was row=16, now row=17
+        self.theme_btn.pack(pady=15, padx=20)
         
-        # Main content area
+        # Add some bottom padding to ensure last element is visible
+        bottom_spacer = ctk.CTkLabel(self.sidebar_frame, text="", height=20)
+        bottom_spacer.pack(pady=5)
+        
+        # Main content area (rest of the method remains the same)
         self.main_frame = ctk.CTkFrame(self.root)
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(20, 20), pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
@@ -258,7 +404,7 @@ class PixelProbeApp:
         )
         self.welcome_label.grid(row=0, column=0, padx=20, pady=20)
         
-        # FIXED: Simple toolbar info frame (no matplotlib toolbar for now)
+        # Toolbar info frame
         self.toolbar_info_frame = ctk.CTkFrame(self.main_frame, height=40)
         self.toolbar_info_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.toolbar_info_frame.grid_columnconfigure(1, weight=1)
@@ -295,7 +441,7 @@ class PixelProbeApp:
         self.canvas = FigureCanvasTkAgg(self.figure, self.content_frame)
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-        # FIXED: Enable built-in matplotlib navigation without toolbar widget
+        # Enable built-in matplotlib navigation
         self.setup_manual_navigation()
         
         # Status bar
@@ -309,7 +455,8 @@ class PixelProbeApp:
         # Set up zoom tracking
         self.setup_zoom_tracking()
         
-        self.logger.debug("Main interface widgets created with manual navigation")
+        self.logger.debug("Main interface widgets created with scrollable sidebar")
+
 
     def setup_window(self):
         """Configure the main window properties"""
@@ -1005,7 +1152,7 @@ class PixelProbeApp:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
 
     def display_image(self, image_data: np.ndarray, title: str = "Image"):
-        """Display image with current interpolation setting"""
+        """Display image with colorbar and colormap support using original array values"""
         
         if image_data is None:
             self.logger.error("Cannot display None image data")
@@ -1020,43 +1167,92 @@ class PixelProbeApp:
             if self.roi_selector and self.roi_selector.rois:
                 existing_rois = self.roi_selector.rois.copy()
             
-            # Clear the subplot and figure completely to remove old colorbars
-            self.subplot.clear()
-            # Also clear any existing colorbars from the figure
-            if hasattr(self.figure, 'axes') and len(self.figure.axes) > 1:
-                # Remove extra axes (colorbars)
-                for ax in self.figure.axes[1:]:
-                    ax.remove()
+            # FIXED: Completely clear and recreate the figure to avoid sizing issues
+            self.figure.clear()
+            
+            # Create new subplot with consistent positioning
+            if self.show_colorbar and len(image_data.shape) == 2 or (len(image_data.shape) == 3 and image_data.shape[2] == 1):
+                # Reserve space for colorbar
+                self.subplot = self.figure.add_subplot(111)
+            else:
+                # No colorbar needed
+                self.subplot = self.figure.add_subplot(111)
             
             # Get current interpolation method
             interpolation = getattr(self, 'current_display_interpolation', 'nearest')
             
-            # Display image WITHOUT colorbar - WITH INTERPOLATION
-            if len(image_data.shape) == 2:
-                # Grayscale
-                im = self.subplot.imshow(image_data, cmap='gray', aspect='equal', 
-                                    interpolation=interpolation)
-            elif len(image_data.shape) == 3:
-                if image_data.shape[2] == 3:
-                    # RGB
-                    im = self.subplot.imshow(image_data, aspect='equal', 
-                                        interpolation=interpolation)
-                elif image_data.shape[2] == 1:
-                    # Single channel treated as grayscale
-                    display_data = image_data[:, :, 0]
-                    im = self.subplot.imshow(display_data, cmap='gray', aspect='equal',
-                                        interpolation=interpolation)
+            # Use ORIGINAL array values for display and colorbar calculations
+            # Always use self.current_array if available, otherwise use image_data
+            original_array = getattr(self, 'current_array', None)
+            if original_array is not None:
+                display_data = original_array
             else:
-                # Fallback
-                im = self.subplot.imshow(image_data, cmap='gray', aspect='equal',
-                                    interpolation=interpolation)
+                display_data = image_data
             
+            # Determine colormap and display mode
+            is_grayscale = len(display_data.shape) == 2 or (len(display_data.shape) == 3 and display_data.shape[2] == 1)
+            is_rgb = len(display_data.shape) == 3 and display_data.shape[2] == 3
+            
+            # For grayscale images, prepare data for colormap display
+            if is_grayscale:
+                if len(display_data.shape) == 3 and display_data.shape[2] == 1:
+                    plot_data = display_data[:, :, 0]
+                else:
+                    plot_data = display_data
+                    
+                # Determine value range for colorbar
+                if self.colorbar_range_mode == 'manual' and self.colorbar_vmin is not None and self.colorbar_vmax is not None:
+                    vmin, vmax = self.colorbar_vmin, self.colorbar_vmax
+                else:
+                    vmin, vmax = plot_data.min(), plot_data.max()
+                
+                # Display with selected colormap and colorbar
+                im = self.subplot.imshow(
+                    plot_data, 
+                    cmap=self.current_colormap, 
+                    aspect='equal',
+                    interpolation=interpolation,
+                    vmin=vmin,
+                    vmax=vmax
+                )
+                
+                # Add colorbar if requested
+                if self.show_colorbar:
+                    self.current_colorbar = self.figure.colorbar(
+                        im, ax=self.subplot, 
+                        label=f'Pixel Values (Range: {vmin:.2f} - {vmax:.2f})',
+                        shrink=0.8,
+                        pad=0.02
+                    )
+                    
+            elif is_rgb:
+                # RGB image - display without colormap or colorbar
+                im = self.subplot.imshow(
+                    display_data, 
+                    aspect='equal', 
+                    interpolation=interpolation
+                )
+                # Note: RGB images don't use colorbars
+                
+            else:
+                # Fallback for other data shapes
+                im = self.subplot.imshow(
+                    display_data, 
+                    cmap=self.current_colormap, 
+                    aspect='equal',
+                    interpolation=interpolation
+                )
+            
+            # Set title and configure axes
             self.subplot.set_title(title)
             self.subplot.axis('on')  # Show axes for pixel coordinates
             
             # Set up pixel-perfect display
-            self.subplot.set_xlim(-0.5, image_data.shape[1] - 0.5)
-            self.subplot.set_ylim(image_data.shape[0] - 0.5, -0.5)
+            self.subplot.set_xlim(-0.5, display_data.shape[1] - 0.5)
+            self.subplot.set_ylim(display_data.shape[0] - 0.5, -0.5)
+            
+            # FIXED: Use tight_layout to maintain consistent sizing
+            self.figure.tight_layout()
             
             # Restore ROIs if they existed
             if existing_rois and self.roi_selector:
@@ -1068,7 +1264,12 @@ class PixelProbeApp:
             self.canvas.draw()
             self.current_image = image_data
             
-            self.logger.info(f"Image displayed with {interpolation} interpolation: {image_data.shape}, {image_data.dtype}")
+            # Update display controls for the new image
+            self.update_display_controls_for_image()
+            
+            # Log display information
+            colorbar_info = "with colorbar" if (self.show_colorbar and is_grayscale) else "without colorbar"
+            self.logger.info(f"Image displayed {colorbar_info} using {self.current_colormap} colormap, {interpolation} interpolation: {display_data.shape}, {display_data.dtype}")
             
         except Exception as e:
             self.logger.error(f"Failed to display image: {e}")
@@ -1478,6 +1679,198 @@ class PixelProbeApp:
         
         # Show simple interpolation method selector
         self.show_interpolation_selector()
+
+    def on_colormap_change(self, colormap: str):
+        """Handle colormap dropdown change"""
+        self.logger.info(f"Colormap changed to: {colormap}")
+        
+        if self.current_image is None:
+            return
+        
+        try:
+            # Store the new colormap
+            self.current_colormap = colormap
+            
+            # Update the display
+            self.display_image(self.current_image, self.current_title)
+            
+            # Update status
+            self.update_status(f"Applied {colormap} colormap")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply colormap: {e}")
+            self.update_status(f"Colormap failed: {str(e)}")
+
+    def on_colorbar_toggle(self):
+        """Handle colorbar checkbox toggle"""
+        self.show_colorbar = self.colorbar_checkbox.get()
+        self.logger.info(f"Colorbar toggled: {self.show_colorbar}")
+        
+        if self.current_image is None:
+            return
+        
+        # Only works with grayscale images
+        if len(self.current_image.shape) == 3 and self.current_image.shape[2] == 3:
+            self.update_status("Colorbar only applies to grayscale images")
+            # Reset the checkbox to previous state
+            if self.show_colorbar:
+                self.colorbar_checkbox.deselect()
+            else:
+                self.colorbar_checkbox.select()
+            self.show_colorbar = not self.show_colorbar
+            return
+        
+        try:
+            # Update the display
+            self.display_image(self.current_image, self.current_title)
+            
+            # Update status
+            status_text = "Showing" if self.show_colorbar else "Hiding"
+            self.update_status(f"{status_text} colorbar")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to toggle colorbar: {e}")
+            self.update_status(f"Colorbar toggle failed: {str(e)}")
+
+    def on_range_mode_change(self, mode: str):
+        """Handle range mode dropdown change"""
+        self.logger.info(f"Range mode changed to: {mode}")
+        
+        self.colorbar_range_mode = mode
+        
+        if mode == 'auto':
+            # Disable manual range inputs
+            self.min_value_entry.configure(state="disabled")
+            self.max_value_entry.configure(state="disabled")
+            self.min_value_entry.delete(0, 'end')
+            self.max_value_entry.delete(0, 'end')
+            self.colorbar_vmin = None
+            self.colorbar_vmax = None
+        else:
+            # Enable manual range inputs
+            self.min_value_entry.configure(state="normal")
+            self.max_value_entry.configure(state="normal")
+            
+            # Set default values if available
+            if self.current_image is not None:
+                if hasattr(self, 'current_array') and self.current_array is not None:
+                    data_min = float(self.current_array.min())
+                    data_max = float(self.current_array.max())
+                else:
+                    data_min = float(self.current_image.min())
+                    data_max = float(self.current_image.max())
+                
+                self.min_value_entry.delete(0, 'end')
+                self.max_value_entry.delete(0, 'end')
+                self.min_value_entry.insert(0, f"{data_min:.3f}")
+                self.max_value_entry.insert(0, f"{data_max:.3f}")
+        
+        # Update display if image is loaded
+        if self.current_image is not None:
+            try:
+                self.display_image(self.current_image, self.current_title)
+                self.update_status(f"Range mode set to {mode}")
+            except Exception as e:
+                self.logger.error(f"Failed to apply range mode: {e}")
+                self.update_status(f"Range mode change failed: {str(e)}")
+
+    def on_manual_range_change(self, event=None):
+        """Handle manual range input changes"""
+        if self.colorbar_range_mode != 'manual' or self.current_image is None:
+            return
+        
+        try:
+            min_text = self.min_value_entry.get().strip()
+            max_text = self.max_value_entry.get().strip()
+            
+            # Only update if both values are provided and valid
+            if min_text and max_text:
+                try:
+                    min_val = float(min_text)
+                    max_val = float(max_text)
+                    
+                    if min_val >= max_val:
+                        # Don't update if invalid range
+                        return
+                    
+                    self.colorbar_vmin = min_val
+                    self.colorbar_vmax = max_val
+                    
+                    # Update display with new range
+                    self.display_image(self.current_image, self.current_title)
+                    
+                except ValueError:
+                    # Invalid numeric input, ignore for now
+                    pass
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to apply manual range: {e}")
+            
+
+    def update_display_controls_for_image(self):
+        """Update display controls when a new image is loaded"""
+        if self.current_image is None:
+            return
+        
+        try:
+            # Update colormap dropdown to current selection
+            if self.colormap_dropdown:
+                self.colormap_dropdown.set(self.current_colormap)
+            
+            # Update colorbar checkbox
+            if self.colorbar_checkbox:
+                if self.show_colorbar:
+                    self.colorbar_checkbox.select()
+                else:
+                    self.colorbar_checkbox.deselect()
+            
+            # Update range mode dropdown
+            if self.range_mode_dropdown:
+                self.range_mode_dropdown.set(self.colorbar_range_mode)
+            
+            # If in manual mode, update the range entries with data bounds
+            if self.colorbar_range_mode == 'manual' and self.min_value_entry and self.max_value_entry:
+                if hasattr(self, 'current_array') and self.current_array is not None:
+                    data_min = float(self.current_array.min())
+                    data_max = float(self.current_array.max())
+                else:
+                    data_min = float(self.current_image.min())
+                    data_max = float(self.current_image.max())
+                
+                # Only update if entries are empty
+                if not self.min_value_entry.get().strip():
+                    self.min_value_entry.insert(0, f"{data_min:.3f}")
+                if not self.max_value_entry.get().strip():
+                    self.max_value_entry.insert(0, f"{data_max:.3f}")
+            
+            # Enable/disable controls based on image type
+            is_rgb = len(self.current_image.shape) == 3 and self.current_image.shape[2] == 3
+            
+            if is_rgb:
+                # For RGB images, disable colorbar-related controls
+                if self.colorbar_checkbox:
+                    self.colorbar_checkbox.configure(state="disabled")
+                if self.range_mode_dropdown:
+                    self.range_mode_dropdown.configure(state="disabled")
+                if self.min_value_entry:
+                    self.min_value_entry.configure(state="disabled")
+                if self.max_value_entry:
+                    self.max_value_entry.configure(state="disabled")
+            else:
+                # For grayscale images, enable all controls
+                if self.colorbar_checkbox:
+                    self.colorbar_checkbox.configure(state="normal")
+                if self.range_mode_dropdown:
+                    self.range_mode_dropdown.configure(state="normal")
+                # Range entries are controlled by range mode
+                if self.colorbar_range_mode == 'manual':
+                    if self.min_value_entry:
+                        self.min_value_entry.configure(state="normal")
+                    if self.max_value_entry:
+                        self.max_value_entry.configure(state="normal")
+                        
+        except Exception as e:
+            self.logger.error(f"Error updating display controls: {e}")
 
     def show_interpolation_selector(self):
         """Show simple interpolation method selection dialog - TALLER VERSION"""
