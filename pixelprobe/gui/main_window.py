@@ -27,7 +27,7 @@ from pixelprobe.processing.interpolation import InterpolationProcessor
 
 class PixelProbeApp:
     """Main application window for PixelProbe"""
-
+   
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the PixelProbe application"""
         self.logger = logging.getLogger(__name__)
@@ -66,7 +66,8 @@ class PixelProbeApp:
         # Initialize main window
         self.root = ctk.CTk()
         self.setup_window()
-        # NOTE: create_widgets() is called AFTER all these variables are set up
+        
+        # Initialize analysis BEFORE create_widgets() is called AFTER all these variables are set up
         
         # Initialize processing
         self.denoiser = AdvancedDenoiseProcessor()
@@ -84,10 +85,15 @@ class PixelProbeApp:
         self.colorbar_vmax = None  # Manual maximum value
         self.current_colorbar = None  # Store current colorbar object for removal
 
-        # Colorbar customization settings - NEW
-        self.colorbar_tick_fontsize = 12  # Larger default font size for colorbar values
+        # NEW: Enhanced colorbar customization settings
+        self.colorbar_tick_fontsize = 10  # Font size for colorbar tick labels
         self.colorbar_label = ""  # Colorbar label text
-        self.colorbar_label_fontsize = 14  # Font size for colorbar label
+        self.colorbar_label_fontsize = 12  # Font size for colorbar label
+
+        # NEW: Export settings
+        self.export_format = "png"  # Default export format
+        self.export_dpi = 300  # Default DPI for exports
+        self.export_bbox_inches = "tight"  # Bounding box setting for exports
 
         # UI references for inline controls (will be set in create_widgets)
         self.colormap_dropdown = None
@@ -96,10 +102,16 @@ class PixelProbeApp:
         self.min_value_entry = None
         self.max_value_entry = None
         
-        # UI references for colorbar customization - NEW
+        # NEW: UI references for colorbar customization
         self.colorbar_label_entry = None
         self.colorbar_tick_font_entry = None
         self.colorbar_label_font_entry = None
+        
+        # NEW: UI references for export controls
+        self.export_format_dropdown = None
+        self.export_dpi_dropdown = None
+        self.export_current_btn = None
+        self.export_interval_btn = None
 
         # NOW create widgets (after all variables are initialized)
         self.create_widgets()
@@ -214,7 +226,7 @@ class PixelProbeApp:
         )
         self.interpolation_btn.pack(pady=2, padx=20)
         
-        # Display section with INLINE controls
+        # ENHANCED Display section with colorbar customization
         self.display_label = ctk.CTkLabel(
             self.sidebar_frame,
             text="Display",
@@ -254,6 +266,64 @@ class PixelProbeApp:
         self.colorbar_checkbox.select() if self.show_colorbar else self.colorbar_checkbox.deselect()
         self.colorbar_checkbox.pack(anchor="w", padx=10, pady=3)
         
+        # NEW: Colorbar customization section - IMPROVED SPACING
+        colorbar_custom_frame = ctk.CTkFrame(self.display_controls_frame)
+        colorbar_custom_frame.pack(fill="x", padx=5, pady=5)
+        
+        ctk.CTkLabel(
+            colorbar_custom_frame,
+            text="Colorbar Settings:",
+            font=ctk.CTkFont(size=11, weight="bold")
+        ).pack(anchor="w", padx=5, pady=(5, 2))
+        
+        # Colorbar label
+        label_frame = ctk.CTkFrame(colorbar_custom_frame)
+        label_frame.pack(fill="x", padx=5, pady=2)
+        
+        ctk.CTkLabel(label_frame, text="Label:", width=45, font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+        self.colorbar_label_entry = ctk.CTkEntry(
+            label_frame, 
+            placeholder_text="Enter colorbar label",
+            width=120,
+            height=24,
+            font=ctk.CTkFont(size=10)
+        )
+        self.colorbar_label_entry.pack(side="left", padx=2)
+        self.colorbar_label_entry.bind('<Return>', self.on_colorbar_label_change)
+        self.colorbar_label_entry.bind('<FocusOut>', self.on_colorbar_label_change)
+        
+        # IMPROVED: Font sizes - separate rows for better spacing
+        tick_font_frame = ctk.CTkFrame(colorbar_custom_frame)
+        tick_font_frame.pack(fill="x", padx=5, pady=2)
+        
+        ctk.CTkLabel(tick_font_frame, text="Tick Font Size:", width=80, font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+        self.colorbar_tick_font_entry = ctk.CTkEntry(
+            tick_font_frame,
+            width=60,  # INCREASED from 40 to 60
+            height=24,
+            font=ctk.CTkFont(size=10)
+        )
+        self.colorbar_tick_font_entry.insert(0, str(self.colorbar_tick_fontsize))
+        self.colorbar_tick_font_entry.pack(side="left", padx=2)
+        self.colorbar_tick_font_entry.bind('<Return>', self.on_colorbar_font_change)
+        self.colorbar_tick_font_entry.bind('<FocusOut>', self.on_colorbar_font_change)
+        
+        # Label font size - separate row for more space
+        label_font_frame = ctk.CTkFrame(colorbar_custom_frame)
+        label_font_frame.pack(fill="x", padx=5, pady=2)
+        
+        ctk.CTkLabel(label_font_frame, text="Label Font Size:", width=80, font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+        self.colorbar_label_font_entry = ctk.CTkEntry(
+            label_font_frame,
+            width=60,  # INCREASED from 40 to 60
+            height=24,
+            font=ctk.CTkFont(size=10)
+        )
+        self.colorbar_label_font_entry.insert(0, str(self.colorbar_label_fontsize))
+        self.colorbar_label_font_entry.pack(side="left", padx=2)
+        self.colorbar_label_font_entry.bind('<Return>', self.on_colorbar_font_change)
+        self.colorbar_label_font_entry.bind('<FocusOut>', self.on_colorbar_font_change)
+        
         # Range mode selection
         ctk.CTkLabel(
             self.display_controls_frame,
@@ -268,48 +338,110 @@ class PixelProbeApp:
             width=180
         )
         self.range_mode_dropdown.set(self.colorbar_range_mode)
-        self.range_mode_dropdown.pack(padx=10, pady=(0, 8))
+        self.range_mode_dropdown.pack(padx=10, pady=(0, 5))
         
-        # Manual range inputs frame
-        self.manual_range_frame = ctk.CTkFrame(self.display_controls_frame)
-        self.manual_range_frame.pack(fill="x", padx=8, pady=(0, 8))
+        # Manual range inputs (initially disabled for auto mode)
+        range_frame = ctk.CTkFrame(self.display_controls_frame)
+        range_frame.pack(fill="x", padx=10, pady=(0, 10))
         
-        ctk.CTkLabel(
-            self.manual_range_frame,
-            text="Min Value:",
-            font=ctk.CTkFont(size=11)
-        ).pack(anchor="w", padx=8, pady=(8, 2))
+        # Min value
+        min_frame = ctk.CTkFrame(range_frame)
+        min_frame.pack(fill="x", padx=5, pady=2)
         
-        self.min_value_entry = ctk.CTkEntry(
-            self.manual_range_frame,
-            placeholder_text="Auto",
-            font=ctk.CTkFont(size=11),
-            height=25,
-            width=170
-        )
-        self.min_value_entry.pack(padx=8, pady=(0, 5))
-        self.min_value_entry.bind("<KeyRelease>", self.on_manual_range_change)
+        ctk.CTkLabel(min_frame, text="Min:", width=35, font=ctk.CTkFont(size=11)).pack(side="left")
+        self.min_value_entry = ctk.CTkEntry(min_frame, width=120, height=28, font=ctk.CTkFont(size=11))
+        self.min_value_entry.pack(side="left", padx=5)
+        self.min_value_entry.bind('<Return>', self.on_manual_range_change)
+        self.min_value_entry.bind('<FocusOut>', self.on_manual_range_change)
         
-        ctk.CTkLabel(
-            self.manual_range_frame,
-            text="Max Value:",
-            font=ctk.CTkFont(size=11)
-        ).pack(anchor="w", padx=8, pady=(2, 2))
+        # Max value
+        max_frame = ctk.CTkFrame(range_frame)
+        max_frame.pack(fill="x", padx=5, pady=2)
         
-        self.max_value_entry = ctk.CTkEntry(
-            self.manual_range_frame,
-            placeholder_text="Auto",
-            font=ctk.CTkFont(size=11),
-            height=25,
-            width=170
-        )
-        self.max_value_entry.pack(padx=8, pady=(0, 8))
-        self.max_value_entry.bind("<KeyRelease>", self.on_manual_range_change)
+        ctk.CTkLabel(max_frame, text="Max:", width=35, font=ctk.CTkFont(size=11)).pack(side="left")
+        self.max_value_entry = ctk.CTkEntry(max_frame, width=120, height=28, font=ctk.CTkFont(size=11))
+        self.max_value_entry.pack(side="left", padx=5)
+        self.max_value_entry.bind('<Return>', self.on_manual_range_change)
+        self.max_value_entry.bind('<FocusOut>', self.on_manual_range_change)
         
-        # Initially disable manual range inputs if in auto mode
+        # Set initial state for range inputs
         if self.colorbar_range_mode == 'auto':
             self.min_value_entry.configure(state="disabled")
             self.max_value_entry.configure(state="disabled")
+        
+        # NEW: Export section
+        self.export_label = ctk.CTkLabel(
+            self.sidebar_frame,
+            text="Export",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        self.export_label.pack(pady=(20, 10), padx=20)
+        
+        # Create frame for export controls
+        self.export_controls_frame = ctk.CTkFrame(self.sidebar_frame)
+        self.export_controls_frame.pack(fill="x", padx=15, pady=5)
+        
+        # Export format selection
+        format_frame = ctk.CTkFrame(self.export_controls_frame)
+        format_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(
+            format_frame,
+            text="Format:",
+            font=ctk.CTkFont(size=12)
+        ).pack(anchor="w", padx=5, pady=2)
+        
+        self.export_format_dropdown = ctk.CTkOptionMenu(
+            format_frame,
+            values=["png", "pdf", "svg", "jpg", "tiff"],
+            command=self.on_export_format_change,
+            width=160
+        )
+        self.export_format_dropdown.set(self.export_format)
+        self.export_format_dropdown.pack(padx=5, pady=2)
+        
+        # DPI selection
+        dpi_frame = ctk.CTkFrame(self.export_controls_frame)
+        dpi_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(
+            dpi_frame,
+            text="DPI:",
+            font=ctk.CTkFont(size=12)
+        ).pack(anchor="w", padx=5, pady=2)
+        
+        self.export_dpi_dropdown = ctk.CTkOptionMenu(
+            dpi_frame,
+            values=["150", "300", "600", "1200"],
+            command=self.on_export_dpi_change,
+            width=160
+        )
+        self.export_dpi_dropdown.set(str(self.export_dpi))
+        self.export_dpi_dropdown.pack(padx=5, pady=2)
+        
+        # Export buttons
+        export_buttons_frame = ctk.CTkFrame(self.export_controls_frame)
+        export_buttons_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.export_current_btn = ctk.CTkButton(
+            export_buttons_frame,
+            text="Export Current Frame",
+            command=self.export_current_frame,
+            width=170,
+            height=32,
+            font=ctk.CTkFont(size=11)
+        )
+        self.export_current_btn.pack(pady=3)
+        
+        self.export_interval_btn = ctk.CTkButton(
+            export_buttons_frame,
+            text="Export Frame Interval",
+            command=self.export_frame_interval,
+            width=170,
+            height=32,
+            font=ctk.CTkFont(size=11)
+        )
+        self.export_interval_btn.pack(pady=3)
         
         # ROI Section
         self.roi_label = ctk.CTkLabel(
@@ -400,7 +532,7 @@ class PixelProbeApp:
         bottom_spacer = ctk.CTkLabel(self.sidebar_frame, text="", height=20)
         bottom_spacer.pack(pady=5)
         
-        # Main content area (rest of the method remains the same)
+        # Main content area
         self.main_frame = ctk.CTkFrame(self.root)
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(20, 20), pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
@@ -466,7 +598,6 @@ class PixelProbeApp:
         self.setup_zoom_tracking()
         
         self.logger.debug("Main interface widgets created with scrollable sidebar")
-
 
     def setup_window(self):
         """Configure the main window properties"""
@@ -1225,7 +1356,7 @@ class PixelProbeApp:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
 
     def display_image(self, image_data: np.ndarray, title: str = "Image"):
-        """Display image with colorbar and colormap support using original array values"""
+        """Display image with enhanced colorbar customization using original array values"""
         
         if image_data is None:
             self.logger.error("Cannot display None image data")
@@ -1319,12 +1450,24 @@ class PixelProbeApp:
                     vmin=vmin, vmax=vmax
                 )
                 
-                # Add colorbar if enabled
+                # Add colorbar if enabled - ENHANCED with customization
                 if self.show_colorbar:
                     divider = make_axes_locatable(self.subplot)
                     cax = divider.append_axes("right", size="5%", pad=0.1)
                     cbar = self.figure.colorbar(im, cax=cax)
-                    cbar.ax.tick_params(labelsize=9)
+                    
+                    # Apply tick font size customization
+                    cbar.ax.tick_params(labelsize=self.colorbar_tick_fontsize)
+                    
+                    # Apply colorbar label if specified
+                    if self.colorbar_label.strip():
+                        cbar.set_label(
+                            self.colorbar_label, 
+                            fontsize=self.colorbar_label_fontsize,
+                            rotation=270,
+                            labelpad=20
+                        )
+                    
                     self.current_colorbar = cbar
                 else:
                     self.current_colorbar = None
@@ -1336,6 +1479,8 @@ class PixelProbeApp:
             
             # Set title and labels
             self.subplot.set_title(title, fontsize=14, fontweight='bold', pad=20)
+            self.subplot.set_xlabel('X (pixels)', fontsize=12)
+            self.subplot.set_ylabel('Y (pixels)', fontsize=12)
             
             # Set axis limits to show complete image with proper orientation
             self.subplot.set_xlim(-0.5, display_data.shape[1] - 0.5)
@@ -1360,8 +1505,8 @@ class PixelProbeApp:
             # Update display controls for the new image
             self.update_display_controls_for_image()
             
-            # Log display information
-            colorbar_info = "with colorbar" if (self.show_colorbar and is_grayscale) else "without colorbar"
+            # Log display information - ENHANCED
+            colorbar_info = f"with colorbar (label: '{self.colorbar_label}', tick_size: {self.colorbar_tick_fontsize}, label_size: {self.colorbar_label_fontsize})" if (self.show_colorbar and is_grayscale) else "without colorbar"
             roi_info = f", {len(existing_rois)} ROIs restored" if existing_rois else ""
             self.logger.info(f"Image displayed {colorbar_info} using {self.current_colormap} colormap, {interpolation} interpolation: {display_data.shape}, {display_data.dtype}{roi_info}")
             
@@ -1836,6 +1981,7 @@ class PixelProbeApp:
             # Disable manual range inputs
             self.min_value_entry.configure(state="disabled")
             self.max_value_entry.configure(state="disabled")
+            # Clear manual range values
             self.min_value_entry.delete(0, 'end')
             self.max_value_entry.delete(0, 'end')
             self.colorbar_vmin = None
@@ -1868,6 +2014,7 @@ class PixelProbeApp:
                 self.logger.error(f"Failed to apply range mode: {e}")
                 self.update_status(f"Range mode change failed: {str(e)}")
 
+
     def on_manual_range_change(self, event=None):
         """Handle manual range input changes"""
         if self.colorbar_range_mode != 'manual' or self.current_image is None:
@@ -1893,16 +2040,369 @@ class PixelProbeApp:
                     # Update display with new range
                     self.display_image(self.current_image, self.current_title)
                     
+                    self.logger.info(f"Manual range updated: [{min_val:.3f}, {max_val:.3f}]")
+                    self.update_status(f"Range updated to [{min_val:.3f}, {max_val:.3f}]")
+                    
                 except ValueError:
                     # Invalid numeric input, ignore for now
                     pass
                     
         except Exception as e:
             self.logger.error(f"Failed to apply manual range: {e}")
+
+    def export_frame_interval(self):
+        """Export multiple frames in an interval"""
+        if not self.current_items or len(self.current_items) <= 1:
+            messagebox.showwarning("Insufficient Data", 
+                                "Please load multiple frames first.\nFrame interval export requires at least 2 frames.")
+            return
+        
+        try:
+            # Create interval selection dialog
+            result = self._show_interval_selection_dialog()
+            if not result:
+                return
             
+            start_frame, end_frame, output_dir = result
+            
+            # Validate interval
+            available_frames = [item for item in self.current_items if start_frame <= item <= end_frame]
+            if not available_frames:
+                messagebox.showwarning("Invalid Interval", 
+                                    f"No frames found in interval {start_frame}-{end_frame}")
+                return
+            
+            # Export frames
+            self._export_frame_range(available_frames, output_dir)
+            
+        except Exception as e:
+            error_msg = f"Error exporting frame interval: {str(e)}"
+            messagebox.showerror("Export Error", error_msg)
+            self.logger.error(f"Frame interval export error: {e}")
+
+    def _export_frame_range(self, frame_numbers, output_dir):
+        """Export a range of frames to the specified directory"""
+        from pathlib import Path
+        import os
+        
+        output_path = Path(output_dir)
+        if not output_path.exists():
+            output_path.mkdir(parents=True, exist_ok=True)
+        
+        total_frames = len(frame_numbers)
+        exported_count = 0
+        errors = []
+        
+        # Show progress dialog
+        progress_dialog = self._create_progress_dialog(f"Exporting {total_frames} frames...")
+        
+        try:
+            for i, frame_num in enumerate(frame_numbers):
+                try:
+                    # Load and display the frame
+                    if hasattr(self.array_handler, 'load_item'):
+                        array = self.array_handler.load_item(frame_num)
+                        if array is not None:
+                            # Display the frame (this updates self.current_image and the plot)
+                            self.display_image(array, f"Frame {frame_num}")
+                            
+                            # Generate filename
+                            filename = output_path / f"frame_{frame_num:04d}.{self.export_format}"
+                            
+                            # Export the frame
+                            self.figure.savefig(
+                                filename,
+                                format=self.export_format,
+                                dpi=self.export_dpi,
+                                bbox_inches=self.export_bbox_inches,
+                                facecolor='white',
+                                edgecolor='none'
+                            )
+                            
+                            exported_count += 1
+                            
+                        else:
+                            errors.append(f"Could not load frame {frame_num}")
+                    
+                    # Update progress
+                    progress = int((i + 1) / total_frames * 100)
+                    self._update_progress_dialog(progress_dialog, progress, f"Exported frame {frame_num}")
+                    
+                except Exception as e:
+                    errors.append(f"Frame {frame_num}: {str(e)}")
+            
+            # Close progress dialog
+            if progress_dialog and progress_dialog.winfo_exists():
+                progress_dialog.destroy()
+            
+            # Show results
+            if exported_count > 0:
+                success_msg = f"Successfully exported {exported_count} frames to:\n{output_dir}"
+                if errors:
+                    success_msg += f"\n\n{len(errors)} frames failed to export"
+                messagebox.showinfo("Export Complete", success_msg)
+                self.update_status(f"Exported {exported_count} frames")
+            else:
+                messagebox.showerror("Export Failed", "No frames were exported successfully")
+                
+        except Exception as e:
+            if progress_dialog and progress_dialog.winfo_exists():
+                progress_dialog.destroy()
+            raise e
+
+    def _create_progress_dialog(self, title):
+        """Create a progress dialog"""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Export Progress")
+        dialog.geometry("300x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 150
+        y = (dialog.winfo_screenheight() // 2) - 60
+        dialog.geometry(f"300x120+{x}+{y}")
+        
+        # Progress label
+        dialog.progress_label = ctk.CTkLabel(dialog, text=title)
+        dialog.progress_label.pack(pady=10)
+        
+        # Progress bar
+        dialog.progress_bar = ctk.CTkProgressBar(dialog, width=250)
+        dialog.progress_bar.pack(pady=10)
+        dialog.progress_bar.set(0)
+        
+        # Status label
+        dialog.status_label = ctk.CTkLabel(dialog, text="Starting export...")
+        dialog.status_label.pack(pady=5)
+        
+        dialog.update()
+        return dialog
+
+    def _update_progress_dialog(self, dialog, progress, status):
+        """Update progress dialog"""
+        if dialog and dialog.winfo_exists():
+            dialog.progress_bar.set(progress / 100)
+            dialog.status_label.configure(text=status)
+            dialog.update()
+            self.root.update_idletasks()
+
+    def _show_interval_selection_dialog(self):
+        """Show dialog for selecting frame interval and output directory"""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Export Frame Interval")
+        dialog.geometry("450x550")  # INCREASED from 400x300 to 450x420
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 225  # Adjusted for new width
+        y = (dialog.winfo_screenheight() // 2) - 275  # Adjusted for new height
+        dialog.geometry(f"450x550+{x}+{y}")
+        
+        result = {'value': None}
+        
+        # Main frame with more padding
+        main_frame = ctk.CTkFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(main_frame, 
+                                text="Select Frame Interval to Export",
+                                font=ctk.CTkFont(size=18, weight="bold"))  # Slightly larger font
+        title_label.pack(pady=(10, 25))  # More spacing
+        
+        # Available frames info with better spacing
+        min_frame = min(self.current_items)
+        max_frame = max(self.current_items)
+        info_label = ctk.CTkLabel(main_frame,
+                                text=f"Available frames: {min_frame} to {max_frame}\nTotal: {len(self.current_items)} frames",
+                                font=ctk.CTkFont(size=13))  # Slightly larger font
+        info_label.pack(pady=(0, 25))  # More spacing
+        
+        # Frame selection section with better layout
+        selection_frame = ctk.CTkFrame(main_frame)
+        selection_frame.pack(fill="x", pady=(0, 20))
+        
+        # Start frame with more spacing
+        start_frame = ctk.CTkFrame(selection_frame)
+        start_frame.pack(fill="x", padx=15, pady=8)
+        
+        ctk.CTkLabel(start_frame, text="Start Frame:", width=120, font=ctk.CTkFont(size=13)).pack(side="left", padx=5)
+        start_entry = ctk.CTkEntry(start_frame, width=120, height=30, font=ctk.CTkFont(size=12))  # Taller entry
+        start_entry.insert(0, str(min_frame))
+        start_entry.pack(side="left", padx=10)
+        
+        # End frame with more spacing
+        end_frame = ctk.CTkFrame(selection_frame)
+        end_frame.pack(fill="x", padx=15, pady=8)
+        
+        ctk.CTkLabel(end_frame, text="End Frame:", width=120, font=ctk.CTkFont(size=13)).pack(side="left", padx=5)
+        end_entry = ctk.CTkEntry(end_frame, width=120, height=30, font=ctk.CTkFont(size=12))  # Taller entry
+        end_entry.insert(0, str(max_frame))
+        end_entry.pack(side="left", padx=10)
+        
+        # Output directory section with better spacing
+        dir_frame = ctk.CTkFrame(main_frame)
+        dir_frame.pack(fill="x", pady=(0, 25))
+        
+        ctk.CTkLabel(dir_frame, text="Output Directory:", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
+        
+        dir_select_frame = ctk.CTkFrame(dir_frame)
+        dir_select_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        dir_entry = ctk.CTkEntry(dir_select_frame, placeholder_text="Select output directory...", height=30, font=ctk.CTkFont(size=11))
+        dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        def select_directory():
+            from tkinter import filedialog
+            directory = filedialog.askdirectory(title="Select Output Directory")
+            if directory:
+                dir_entry.delete(0, 'end')
+                dir_entry.insert(0, directory)
+        
+        dir_btn = ctk.CTkButton(dir_select_frame, text="Browse", command=select_directory, width=90, height=30)
+        dir_btn.pack(side="right")
+        
+        # Buttons with better spacing and larger size
+        btn_frame = ctk.CTkFrame(main_frame)
+        btn_frame.pack(pady=(10, 15))
+        
+        def on_export():
+            try:
+                start = int(start_entry.get())
+                end = int(end_entry.get())
+                output_dir = dir_entry.get().strip()
+                
+                if start > end:
+                    messagebox.showerror("Invalid Range", "Start frame must be less than or equal to end frame")
+                    return
+                    
+                if not output_dir:
+                    messagebox.showerror("No Directory", "Please select an output directory")
+                    return
+                
+                result['value'] = (start, end, output_dir)
+                dialog.destroy()
+                
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid frame numbers")
+        
+        export_btn = ctk.CTkButton(btn_frame, text="Export", command=on_export, width=120, height=35, 
+                                font=ctk.CTkFont(size=13, weight="bold"))
+        export_btn.pack(side="left", padx=10)
+        
+        cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy, width=120, height=35,
+                                font=ctk.CTkFont(size=13))
+        cancel_btn.pack(side="left", padx=10)
+        
+        dialog.wait_window()
+        return result['value']
+
+    def export_current_frame(self):
+        """Export the currently displayed frame with colorbar"""
+        if self.current_image is None:
+            messagebox.showwarning("No Image", "Please load an image first")
+            return
+        
+        try:
+            from tkinter import filedialog
+            
+            # Get filename from user
+            filename = filedialog.asksaveasfilename(
+                title="Export Current Frame",
+                defaultextension=f".{self.export_format}",
+                filetypes=[
+                    (f"{self.export_format.upper()}", f"*.{self.export_format}"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if filename:
+                # Save the current figure
+                self.figure.savefig(
+                    filename,
+                    format=self.export_format,
+                    dpi=self.export_dpi,
+                    bbox_inches=self.export_bbox_inches,
+                    facecolor='white',
+                    edgecolor='none'
+                )
+                
+                messagebox.showinfo("Export Success", f"Frame exported successfully to:\n{filename}")
+                self.update_status(f"Exported current frame to {filename}")
+                self.logger.info(f"Exported current frame to {filename} ({self.export_format}, {self.export_dpi} DPI)")
+                
+        except Exception as e:
+            error_msg = f"Error exporting frame: {str(e)}"
+            messagebox.showerror("Export Error", error_msg)
+            self.update_status("Export failed")
+            self.logger.error(f"Export error: {e}")
+
+    def on_colorbar_label_change(self, event=None):
+        """Handle colorbar label change"""
+        if self.colorbar_label_entry:
+            new_label = self.colorbar_label_entry.get().strip()
+            if new_label != self.colorbar_label:
+                self.colorbar_label = new_label
+                self.logger.info(f"Colorbar label changed to: '{self.colorbar_label}'")
+                
+                # Update display if image is loaded
+                if self.current_image is not None:
+                    self.display_image(self.current_image, self.current_title)
+                    self.update_status(f"Updated colorbar label")
+
+    def on_colorbar_font_change(self, event=None):
+        """Handle colorbar font size changes"""
+        try:
+            # Get tick font size
+            if self.colorbar_tick_font_entry:
+                tick_size = int(self.colorbar_tick_font_entry.get())
+                if tick_size > 0:
+                    self.colorbar_tick_fontsize = tick_size
+            
+            # Get label font size  
+            if self.colorbar_label_font_entry:
+                label_size = int(self.colorbar_label_font_entry.get())
+                if label_size > 0:
+                    self.colorbar_label_fontsize = label_size
+            
+            self.logger.info(f"Colorbar font sizes changed - tick: {self.colorbar_tick_fontsize}, label: {self.colorbar_label_fontsize}")
+            
+            # Update display if image is loaded
+            if self.current_image is not None:
+                self.display_image(self.current_image, self.current_title)
+                self.update_status("Updated colorbar font sizes")
+                
+        except ValueError:
+            # Invalid input, restore previous values
+            if self.colorbar_tick_font_entry:
+                self.colorbar_tick_font_entry.delete(0, 'end')
+                self.colorbar_tick_font_entry.insert(0, str(self.colorbar_tick_fontsize))
+            if self.colorbar_label_font_entry:
+                self.colorbar_label_font_entry.delete(0, 'end')
+                self.colorbar_label_font_entry.insert(0, str(self.colorbar_label_fontsize))
+            self.update_status("Invalid font size - please enter a positive number")
+        except Exception as e:
+            self.logger.error(f"Error updating colorbar font sizes: {e}")
+
+    def on_export_format_change(self, format_name: str):
+        """Handle export format change"""
+        self.export_format = format_name
+        self.logger.info(f"Export format changed to: {self.export_format}")
+
+    def on_export_dpi_change(self, dpi_value: str):
+        """Handle export DPI change"""
+        try:
+            self.export_dpi = int(dpi_value)
+            self.logger.info(f"Export DPI changed to: {self.export_dpi}")
+        except ValueError:
+            self.logger.error(f"Invalid DPI value: {dpi_value}")
 
     def update_display_controls_for_image(self):
-        """Update display controls when a new image is loaded"""
+        """Update display controls when a new image is loaded - enhanced for colorbar customization"""
         if self.current_image is None:
             return
         
@@ -1917,6 +2417,28 @@ class PixelProbeApp:
                     self.colorbar_checkbox.select()
                 else:
                     self.colorbar_checkbox.deselect()
+            
+            # Update colorbar customization entries
+            if self.colorbar_label_entry:
+                # Clear and set current label
+                current_label = self.colorbar_label_entry.get()
+                if current_label != self.colorbar_label:
+                    self.colorbar_label_entry.delete(0, 'end')
+                    if self.colorbar_label:
+                        self.colorbar_label_entry.insert(0, self.colorbar_label)
+            
+            # Update font size entries
+            if self.colorbar_tick_font_entry:
+                current_tick_font = self.colorbar_tick_font_entry.get()
+                if current_tick_font != str(self.colorbar_tick_fontsize):
+                    self.colorbar_tick_font_entry.delete(0, 'end')
+                    self.colorbar_tick_font_entry.insert(0, str(self.colorbar_tick_fontsize))
+            
+            if self.colorbar_label_font_entry:
+                current_label_font = self.colorbar_label_font_entry.get()
+                if current_label_font != str(self.colorbar_label_fontsize):
+                    self.colorbar_label_font_entry.delete(0, 'end')
+                    self.colorbar_label_font_entry.insert(0, str(self.colorbar_label_fontsize))
             
             # Update range mode dropdown
             if self.range_mode_dropdown:
@@ -1937,6 +2459,10 @@ class PixelProbeApp:
                 if not self.max_value_entry.get().strip():
                     self.max_value_entry.insert(0, f"{data_max:.3f}")
             
+            # Update export controls state
+            if hasattr(self, 'export_current_btn') and self.export_current_btn:
+                self.export_current_btn.configure(state="normal")
+            
             # Enable/disable controls based on image type
             is_rgb = len(self.current_image.shape) == 3 and self.current_image.shape[2] == 3
             
@@ -1950,18 +2476,39 @@ class PixelProbeApp:
                     self.min_value_entry.configure(state="disabled")
                 if self.max_value_entry:
                     self.max_value_entry.configure(state="disabled")
+                # Disable colorbar customization for RGB images
+                if self.colorbar_label_entry:
+                    self.colorbar_label_entry.configure(state="disabled")
+                if self.colorbar_tick_font_entry:
+                    self.colorbar_tick_font_entry.configure(state="disabled")
+                if self.colorbar_label_font_entry:
+                    self.colorbar_label_font_entry.configure(state="disabled")
             else:
                 # For grayscale images, enable all controls
                 if self.colorbar_checkbox:
                     self.colorbar_checkbox.configure(state="normal")
                 if self.range_mode_dropdown:
                     self.range_mode_dropdown.configure(state="normal")
+                    
+                # Enable colorbar customization for grayscale images
+                if self.colorbar_label_entry:
+                    self.colorbar_label_entry.configure(state="normal")
+                if self.colorbar_tick_font_entry:
+                    self.colorbar_tick_font_entry.configure(state="normal")
+                if self.colorbar_label_font_entry:
+                    self.colorbar_label_font_entry.configure(state="normal")
+                    
                 # Range entries are controlled by range mode
                 if self.colorbar_range_mode == 'manual':
                     if self.min_value_entry:
                         self.min_value_entry.configure(state="normal")
                     if self.max_value_entry:
                         self.max_value_entry.configure(state="normal")
+                else:
+                    if self.min_value_entry:
+                        self.min_value_entry.configure(state="disabled")
+                    if self.max_value_entry:
+                        self.max_value_entry.configure(state="disabled")
                         
         except Exception as e:
             self.logger.error(f"Error updating display controls: {e}")
