@@ -1,7 +1,7 @@
 """
 ROI (Region of Interest) selector for PixelProbe
 Handles interactive region selection on images with pixel-perfect precision
-Rectangle selection includes all pixels within the drawn area
+Rectangle selection uses interior pixels only (excludes boundary)
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ from enum import Enum
 
 
 class ROIType(Enum):
-    """Types of ROI selections available"""
+    """Types of ROI selections available - Circle removed"""
     RECTANGLE = "rectangle"
     POINT = "point"
     MULTI_POINT = "multi_point"
@@ -23,7 +23,7 @@ class ROIType(Enum):
 
 @dataclass
 class ROI:
-    """Data class for storing ROI information with pixel-perfect selection"""
+    """Data class for storing ROI information with interior pixel selection"""
     roi_type: ROIType
     coordinates: Dict[str, Any]
     label: str
@@ -31,9 +31,9 @@ class ROI:
     linewidth: float = 2.0
     
     def get_bounds(self) -> Tuple[int, int, int, int]:
-        """Get bounding box as (x_min, y_min, x_max, y_max) - includes all selected pixels"""
+        """Get bounding box as (x_min, y_min, x_max, y_max) - interior pixels only"""
         if self.roi_type == ROIType.RECTANGLE:
-            # Return the actual selected bounds (all pixels within drawn rectangle)
+            # Return interior bounds (excludes boundary)
             x = int(round(self.coordinates['x']))
             y = int(round(self.coordinates['y']))
             w = int(round(self.coordinates['width']))
@@ -54,25 +54,25 @@ class ROI:
         return 0, 0, 1, 1
     
     def get_mask(self, image_shape: Tuple[int, int]) -> np.ndarray:
-        """Generate boolean mask for this ROI - selects all pixels within drawn area"""
+        """Generate boolean mask for this ROI - INTERIOR PIXELS ONLY"""
         mask = np.zeros(image_shape, dtype=bool)
         
         if self.roi_type == ROIType.RECTANGLE:
-            # Use the full selected area (all pixels within the drawn rectangle)
+            # Use interior coordinates only (excludes boundary)
             x = int(round(self.coordinates['x']))
             y = int(round(self.coordinates['y']))
             w = int(round(self.coordinates['width']))
             h = int(round(self.coordinates['height']))
             
             # Ensure we stay within image bounds
-            x_start = max(0, min(x, image_shape[1] - 1))
-            y_start = max(0, min(y, image_shape[0] - 1))
-            x_end = max(x_start + 1, min(x + w, image_shape[1]))
-            y_end = max(y_start + 1, min(y + h, image_shape[0]))
+            x = max(0, min(x, image_shape[1] - 1))
+            y = max(0, min(y, image_shape[0] - 1))
+            x_end = max(x, min(x + w, image_shape[1]))
+            y_end = max(y, min(y + h, image_shape[0]))
             
-            # Select all pixels within the drawn rectangle
-            if x_end > x_start and y_end > y_start:
-                mask[y_start:y_end, x_start:x_end] = True
+            # Only select interior pixels (boundary excluded)
+            if x_end > x and y_end > y:
+                mask[y:y_end, x:x_end] = True
         
         elif self.roi_type == ROIType.POINT:
             x = int(round(self.coordinates['x']))
@@ -90,28 +90,26 @@ class ROI:
         return mask
     
     def get_pixel_coordinates(self) -> List[Tuple[int, int]]:
-        """Get list of (x, y) pixel coordinates within this ROI - all selected pixels"""
+        """Get list of (x, y) pixel coordinates within this ROI - interior only"""
         if self.roi_type == ROIType.POINT:
             return [(int(round(self.coordinates['x'])), int(round(self.coordinates['y'])))]
         elif self.roi_type == ROIType.MULTI_POINT:
             return [(int(round(p['x'])), int(round(p['y']))) for p in self.coordinates['points']]
-        elif self.roi_type == ROIType.RECTANGLE:
-            # Return all pixels within the drawn rectangle
+        else:
+            # For rectangles, return interior pixels only
             x_min, y_min, x_max, y_max = self.get_bounds()
             pixels = []
             for y in range(y_min, y_max):
                 for x in range(x_min, x_max):
                     pixels.append((x, y))
             return pixels
-        else:
-            return []
 
 
 class ROISelector:
     """Main ROI selection class for handling interactive region selection"""
     
     def __init__(self, figure, subplot, status_callback=None):
-        """Initialize ROI selector with pixel-perfect selection"""
+        """Initialize ROI selector with interior pixel selection"""
         self.logger = logging.getLogger(__name__)
         self.figure = figure
         self.subplot = subplot
@@ -134,7 +132,7 @@ class ROISelector:
         self.current_multi_point_roi = None
         self.multi_point_previews = []
         
-        # Colors for different ROI types
+        # Colors for different ROI types - Circle removed
         self.roi_colors = {
             ROIType.RECTANGLE: "red",
             ROIType.POINT: "green",
@@ -142,12 +140,7 @@ class ROISelector:
             ROIType.POLYGON: "purple"
         }
         
-        self.logger.info("ROI Selector initialized with pixel-perfect selection")
-    
-    def _update_status(self, message: str):
-        """Update status through callback if available"""
-        if self.status_callback:
-            self.status_callback(message)
+        self.logger.info("ROI Selector initialized - interior pixel selection mode")
     
     def set_roi_type(self, roi_type: ROIType):
         """Set the current ROI selection type with proper reinitialization"""
@@ -177,9 +170,9 @@ class ROISelector:
         self._setup_event_handlers()
         
         if self.current_roi_type == ROIType.POINT:
-            self._update_status(f"ROI selection active - Click to select pixels")
+            self._update_status(f"ROI selection active - Click to select pixels (interior only)")
         else:
-            self._update_status(f"ROI selection active - {self.current_roi_type.value} mode")
+            self._update_status(f"ROI selection active - {self.current_roi_type.value} mode (interior pixels only)")
         self.logger.info("ROI selection activated")
     
     def deactivate_selection(self):
@@ -197,21 +190,21 @@ class ROISelector:
         self.logger.info("ROI selection deactivated")
     
     def _setup_event_handlers(self):
-        """Setup matplotlib event handlers for ROI selection"""
+        """Setup matplotlib event handlers for ROI selection - Circle removed"""
         if self.current_roi_type == ROIType.RECTANGLE:
             self._setup_rectangle_selector()
         elif self.current_roi_type == ROIType.POINT:
             self._setup_point_selector()
     
     def _setup_rectangle_selector(self):
-        """Setup rectangle selection with minimum 2x2 pixel requirement"""
+        """Setup rectangle selection for interior pixel selection"""
         self.current_selector = RectangleSelector(
             self.subplot,
             self._on_rectangle_select,
             useblit=True,
             button=[1],  # Only left mouse button
-            minspanx=2,  # Minimum 2 pixels width (for 2x2 minimum)
-            minspany=2,  # Minimum 2 pixels height (for 2x2 minimum)
+            minspanx=2,  # Minimum 2 pixels for interior selection
+            minspany=2,  # Minimum 2 pixels for interior selection
             spancoords='data',
             interactive=True,
             drag_from_anywhere=True
@@ -261,7 +254,7 @@ class ROISelector:
         self.current_multi_point_roi = None
     
     def _on_rectangle_select(self, eclick, erelease):
-        """Handle rectangle selection completion with proper pixel selection"""
+        """Handle rectangle selection completion with interior pixel selection"""
         if eclick is None or erelease is None:
             return
         
@@ -275,41 +268,35 @@ class ROISelector:
         end_x = int(round(erelease.xdata))
         end_y = int(round(erelease.ydata))
         
-        # Calculate the actual selected rectangle bounds
-        # Use the full area that the user visually selected
-        min_x = min(start_x, end_x)
-        max_x = max(start_x, end_x)
-        min_y = min(start_y, end_y)
-        max_y = max(start_y, end_y)
+        # Determine the interior pixels (exclude boundary)
+        min_x = min(start_x, end_x) + 1  # +1 to exclude boundary
+        max_x = max(start_x, end_x)      # -1 applied in range
+        min_y = min(start_y, end_y) + 1  # +1 to exclude boundary  
+        max_y = max(start_y, end_y)      # -1 applied in range
         
-        # Calculate width and height (inclusive of both endpoints)
-        width = max_x - min_x + 1
-        height = max_y - min_y + 1
-        
-        # Rectangle ROI requires minimum 2x2 pixels (single pixels use Point ROI)
-        if width < 2 or height < 2:
-            self._update_status("Rectangle ROI requires minimum 2×2 pixels. Use Point ROI for single pixels.")
+        # Ensure we have at least 1 pixel inside
+        if max_x <= min_x or max_y <= min_y:
+            self._update_status("Rectangle too small - no interior pixels. Try larger selection.")
             return
         
-        # Ensure valid selection
-        if width <= 0 or height <= 0:
-            self._update_status("Invalid selection. Try selecting a larger area.")
-            return
+        # Calculate interior dimensions
+        interior_width = max_x - min_x
+        interior_height = max_y - min_y
         
-        # Store both selection coordinates and visual boundary coordinates
+        # Store both boundary coordinates and interior coordinates
         roi = ROI(
             roi_type=ROIType.RECTANGLE,
             coordinates={
-                # Selected area coordinates (what gets selected for analysis)
+                # Interior coordinates (what gets selected)
                 'x': float(min_x),
                 'y': float(min_y), 
-                'width': float(width),
-                'height': float(height),
-                # Visual boundary coordinates (for display)
-                'boundary_start_x': float(min_x - 0.5),  # Visual boundary
-                'boundary_start_y': float(min_y - 0.5),
-                'boundary_end_x': float(max_x + 0.5),
-                'boundary_end_y': float(max_y + 0.5),
+                'width': float(interior_width),
+                'height': float(interior_height),
+                # Boundary coordinates (for visualization)
+                'boundary_start_x': float(min(start_x, end_x)),
+                'boundary_start_y': float(min(start_y, end_y)),
+                'boundary_end_x': float(max(start_x, end_x)),
+                'boundary_end_y': float(max(start_y, end_y)),
                 # First and last clicked pixels
                 'first_pixel': {'x': start_x, 'y': start_y},
                 'last_pixel': {'x': end_x, 'y': end_y}
@@ -353,55 +340,59 @@ class ROISelector:
             # Single point selection
             roi = ROI(
                 roi_type=ROIType.POINT,
-                coordinates={'x': float(x_pixel), 'y': float(y_pixel)},
+                coordinates={
+                    'x': x_pixel,
+                    'y': y_pixel
+                },
                 label=f"Point_{self.roi_counter + 1}",
                 color=self.roi_colors[ROIType.POINT]
             )
             
             self._add_roi(roi)
             self._log_roi_coordinates(roi)
+            self._update_status(f"Selected pixel at ({x_pixel}, {y_pixel})")
     
-    def _add_point_to_multi_selection(self, x: int, y: int):
-        """Add a point to the current multi-point selection"""
-        # Initialize multi-point ROI if not exists
+    def _add_point_to_multi_selection(self, x, y):
+        """Add point to current multi-point selection"""
         if self.current_multi_point_roi is None:
+            # Start new multi-point ROI
             self.current_multi_point_roi = {
                 'points': [],
                 'label': f"MultiPoint_{self.roi_counter + 1}",
                 'color': self.roi_colors[ROIType.MULTI_POINT]
             }
         
-        # Add the point
-        point = {'x': float(x), 'y': float(y)}
-        self.current_multi_point_roi['points'].append(point)
+        # Add point
+        self.current_multi_point_roi['points'].append({'x': x, 'y': y})
         
         # Add visual preview
         preview = self.subplot.plot(
-            x, y, marker='o', color=self.current_multi_point_roi['color'],
-            markersize=8, markeredgewidth=2, markerfacecolor='none',
+            x, y,
+            marker='o',
+            color=self.current_multi_point_roi['color'],
+            markersize=8,
+            markeredgewidth=2,
+            markerfacecolor='none',
             alpha=0.7
         )[0]
         self.multi_point_previews.append(preview)
         
-        # Add point number
-        text_preview = self.subplot.annotate(
+        # Add point label
+        label_preview = self.subplot.annotate(
             f"{len(self.current_multi_point_roi['points'])}",
             (x, y),
             xytext=(5, 5), textcoords='offset points',
             fontsize=8, color=self.current_multi_point_roi['color'],
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
         )
-        self.multi_point_previews.append(text_preview)
+        self.multi_point_previews.append(label_preview)
         
         self.figure.canvas.draw_idle()
-        
-        point_count = len(self.current_multi_point_roi['points'])
-        self._update_status(f"Multi-point selection: {point_count} points selected. Ctrl or Esc to finish.")
+        self._update_status(f"Multi-point: {len(self.current_multi_point_roi['points'])} pixels selected")
     
     def _finish_multi_point_selection(self):
         """Finish multi-point selection and create ROI"""
-        if self.current_multi_point_roi and self.current_multi_point_roi['points']:
-            # Create the multi-point ROI
+        if self.current_multi_point_roi and len(self.current_multi_point_roi['points']) > 0:
             roi = ROI(
                 roi_type=ROIType.MULTI_POINT,
                 coordinates={
@@ -436,82 +427,101 @@ class ROISelector:
         self.logger.info(f"Added ROI: {roi.label}")
 
     def _visualize_roi(self, roi: ROI):
-        """Add visual representation of ROI with clear selected area indication"""
+        """Add visual representation of ROI with boundary frame and interior highlighting"""
         if roi.roi_type == ROIType.RECTANGLE:
-            # Get selected area coordinates
-            x = int(round(roi.coordinates['x']))
-            y = int(round(roi.coordinates['y']))
-            w = int(round(roi.coordinates['width']))
-            h = int(round(roi.coordinates['height']))
+            # Get coordinates
+            interior_x = int(round(roi.coordinates['x']))
+            interior_y = int(round(roi.coordinates['y']))
+            interior_w = int(round(roi.coordinates['width']))
+            interior_h = int(round(roi.coordinates['height']))
             
-            # Draw the selected area rectangle (pixel-centered)
-            selected_rect = patches.Rectangle(
-                (x - 0.5, y - 0.5), w, h,
+            # Get boundary coordinates (for frame visualization)
+            boundary_start_x = int(round(roi.coordinates.get('boundary_start_x', interior_x - 1)))
+            boundary_start_y = int(round(roi.coordinates.get('boundary_start_y', interior_y - 1)))
+            boundary_end_x = int(round(roi.coordinates.get('boundary_end_x', interior_x + interior_w)))
+            boundary_end_y = int(round(roi.coordinates.get('boundary_end_y', interior_y + interior_h)))
+            
+            # Draw boundary frame (the selection area)
+            boundary_width = boundary_end_x - boundary_start_x
+            boundary_height = boundary_end_y - boundary_start_y
+            
+            boundary_rect = patches.Rectangle(
+                (boundary_start_x, boundary_start_y), boundary_width, boundary_height,
                 fill=False,
                 edgecolor=roi.color,
-                linewidth=2.0,
-                alpha=0.8,
-                linestyle='-'
+                linewidth=2,
+                alpha=0.6,
+                linestyle='--'  # Dashed line for boundary
             )
-            self.subplot.add_patch(selected_rect)
+            self.subplot.add_patch(boundary_rect)
             
-            # Add a light fill to show the selected area
-            fill_rect = patches.Rectangle(
-                (x - 0.5, y - 0.5), w, h,
+            # Draw interior area (the actual selected pixels) with different style
+            interior_rect = patches.Rectangle(
+                (interior_x - 0.5, interior_y - 0.5), interior_w, interior_h,
                 fill=True,
                 facecolor=roi.color,
-                alpha=0.1,  # Light transparent fill
-                edgecolor='none'
+                alpha=0,  # Light fill to show selected area
+                edgecolor=roi.color,
+                linewidth=1,
+                linestyle='-'
             )
-            self.subplot.add_patch(fill_rect)
+            self.subplot.add_patch(interior_rect)
             
-            # Mark first and last clicked pixels
-            first_pixel = roi.coordinates.get('first_pixel', {'x': x, 'y': y})
-            last_pixel = roi.coordinates.get('last_pixel', {'x': x + w - 1, 'y': y + h - 1})
+            # Mark first and last clicked pixels (like point selection)
+            first_pixel = roi.coordinates.get('first_pixel', {'x': boundary_start_x, 'y': boundary_start_y})
+            last_pixel = roi.coordinates.get('last_pixel', {'x': boundary_end_x, 'y': boundary_end_y})
             
             # First pixel marker (green)
             self.subplot.plot(
                 first_pixel['x'], first_pixel['y'],
-                marker='s', color='green', markersize=6,
-                markeredgewidth=2, markerfacecolor='lightgreen',
-                alpha=0.9
+                marker='s',  # Square marker
+                color='green',
+                markersize=8,
+                markeredgewidth=2,
+                markerfacecolor='lightgreen',
+                alpha=0.9,
+                label='Start'
             )
             
-            # Last pixel marker (red)  
+            # Last pixel marker (red)
             self.subplot.plot(
                 last_pixel['x'], last_pixel['y'],
-                marker='s', color='red', markersize=6,
-                markeredgewidth=2, markerfacecolor='lightcoral',
-                alpha=0.9
+                marker='s',  # Square marker  
+                color='red',
+                markersize=8,
+                markeredgewidth=2,
+                markerfacecolor='lightcoral',
+                alpha=0.9,
+                label='End'
             )
             
-            # START label - positioned outside the rectangle (left side)
+            # START label - FULLY OUTSIDE boundary (left side of boundary box)
             self.subplot.annotate(
                 f"START\n({first_pixel['x']}, {first_pixel['y']})",
-                (x - 0.5, y - 0.5),  # Top-left corner of selected area
-                xytext=(-50, 0), textcoords='offset points',  # Far left of rectangle
-                fontsize=11, color='green', weight='bold',
+                (boundary_start_x, boundary_start_y),  # Use boundary corner as reference
+                xytext=(-50, 0), textcoords='offset points',  # Far left of boundary
+                fontsize=12, color='green', weight='bold',
                 ha='center', va='center',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='green', alpha=0.9)
             )
             
-            # END label - positioned outside the rectangle (right side)
+            # END label - FULLY OUTSIDE boundary (right side of boundary box) 
             self.subplot.annotate(
                 f"END\n({last_pixel['x']}, {last_pixel['y']})",
-                (x + w - 0.5, y + h - 0.5),  # Bottom-right corner of selected area
-                xytext=(50, 0), textcoords='offset points',  # Far right of rectangle
-                fontsize=11, color='red', weight='bold',
+                (boundary_end_x, boundary_end_y),  # Use boundary corner as reference
+                xytext=(50, 0), textcoords='offset points',  # Far right of boundary
+                fontsize=12, color='red', weight='bold',
                 ha='center', va='center',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='red', alpha=0.9)
             )
             
-            # Size label at top-right corner
+            # Size label at TOP-RIGHT corner of boundary (outside ROI)
             self.subplot.annotate(
-                f"{w}×{h}px",
-                (x + w - 0.5, y - 0.5),  # Top-right corner of selected area
-                xytext=(10, -10), textcoords='offset points',
-                fontsize=11, color=roi.color, weight='bold',
-                ha='left', va='top',
+                f"{interior_w}×{interior_h}px",
+                (boundary_end_x, boundary_start_y),  # Top-right corner
+                xytext=(20, 5), textcoords='offset points',  # Outside above-right
+                fontsize=12, color=roi.color, weight='bold',
+                ha='left', va='bottom',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor=roi.color, alpha=0.9)
             )
         
@@ -522,10 +532,13 @@ class ROISelector:
             
             self.subplot.plot(
                 x, y,
-                marker='+', color=roi.color, markersize=12,
-                markeredgewidth=3, markerfacecolor='none', alpha=0.9
+                marker='+',
+                color=roi.color,
+                markersize=12,
+                markeredgewidth=3,
+                markerfacecolor='none',
+                alpha=0.9
             )
-            
             # Add pixel coordinates as text annotation
             self.subplot.annotate(
                 f"({x}, {y})",
@@ -542,10 +555,14 @@ class ROISelector:
                 y = int(round(point['y']))
                 
                 self.subplot.plot(
-                    x, y, marker='o', color=roi.color, markersize=10,
-                    markeredgewidth=2, markerfacecolor='none', alpha=0.9
+                    x, y,
+                    marker='o',
+                    color=roi.color,
+                    markersize=10,
+                    markeredgewidth=2,
+                    markerfacecolor='none',
+                    alpha=0.9
                 )
-                
                 # Add point number
                 self.subplot.annotate(
                     f"{i+1}",
@@ -558,9 +575,9 @@ class ROISelector:
         self.figure.canvas.draw_idle()
         
     def _log_roi_coordinates(self, roi: ROI):
-        """Enhanced coordinate logging with selected pixel info"""
+        """Enhanced coordinate logging with interior pixel info"""
         if roi.roi_type == ROIType.RECTANGLE:
-            # Selected area coordinates  
+            # Interior coordinates
             x = int(round(roi.coordinates['x']))
             y = int(round(roi.coordinates['y']))
             w = int(round(roi.coordinates['width']))
@@ -570,7 +587,7 @@ class ROISelector:
             first_pixel = roi.coordinates.get('first_pixel', {'x': 0, 'y': 0})
             last_pixel = roi.coordinates.get('last_pixel', {'x': 0, 'y': 0})
             
-            coords = f"Selected: ({x}, {y}) {w}×{h}px | Clicked: ({first_pixel['x']},{first_pixel['y']}) to ({last_pixel['x']},{last_pixel['y']})"
+            coords = f"Interior: ({x}, {y}) {w}×{h}px | Clicked: ({first_pixel['x']},{first_pixel['y']}) to ({last_pixel['x']},{last_pixel['y']})"
         
         elif roi.roi_type == ROIType.POINT:
             x = int(round(roi.coordinates['x']))
@@ -591,22 +608,38 @@ class ROISelector:
         self.logger.info(f"ROI coordinates: {roi.label} - {coords}")
     
     def clear_rois(self):
-        """Clear all ROIs with proper cleanup"""
-        # Finish any ongoing multi-point selection first
-        if self.multi_point_mode and self.current_multi_point_roi:
-            self._finish_multi_point_selection()
+        """Clear all ROIs while maintaining selection state"""
+        if not self.rois:
+            self._update_status("No ROIs to clear")
+            return
         
-        self.rois.clear()
-        self.roi_counter = 0
-        
-        self._update_status("All ROIs cleared")
-        self.logger.info("All ROIs cleared")
-        
-        # Trigger canvas redraw
-        self.figure.canvas.draw_idle()
+        try:
+            roi_count = len(self.rois)
+            
+            # Clear ROI list
+            self.rois.clear()
+            
+            # Reset counter
+            self.roi_counter = 0
+            
+            # Clear any ongoing multi-point selection
+            if self.multi_point_mode and self.current_multi_point_roi:
+                self.multi_point_mode = False
+                self.current_multi_point_roi = None
+                self._clear_multi_point_previews()
+            
+            self._update_status(f"Cleared {roi_count} ROIs - selection mode remains active")
+            self.logger.info(f"Cleared {roi_count} ROIs, selection mode preserved")
+            
+            # Trigger canvas redraw
+            self.figure.canvas.draw_idle()
+            
+        except Exception as e:
+            self.logger.error(f"Error in clear_rois: {e}")
+            self._update_status(f"Error clearing ROIs: {str(e)}")
 
     def get_roi_statistics(self, image_data: np.ndarray) -> Dict[str, Dict[str, Any]]:
-        """Calculate statistics for all ROIs with proper pixel selection"""
+        """Calculate statistics for all ROIs with interior pixel selection"""
         stats = {}
         
         for roi in self.rois:
@@ -642,49 +675,58 @@ class ROISelector:
                         }
                 
                 else:
-                    # For rectangles and multi-points - use all selected pixels
+                    # For rectangles and multi-points - use interior pixels only
                     mask = roi.get_mask(image_data.shape[:2])
-                    
                     if np.any(mask):
-                        # Extract pixel values using the mask
-                        if len(image_data.shape) == 3:
-                            # Color image - convert to grayscale for statistics
-                            if image_data.shape[2] == 3:  # RGB
-                                gray_data = 0.299 * image_data[:, :, 0] + 0.587 * image_data[:, :, 1] + 0.114 * image_data[:, :, 2]
+                        roi_data = image_data[mask]
+                        
+                        # Handle color images
+                        if len(roi_data.shape) > 1 and roi_data.shape[1] > 1:
+                            # Color image - convert to grayscale
+                            if roi_data.shape[1] == 3:  # RGB
+                                roi_data = 0.299 * roi_data[:, 0] + 0.587 * roi_data[:, 1] + 0.114 * roi_data[:, 2]
                             else:
-                                gray_data = np.mean(image_data, axis=2)
-                            pixel_values = gray_data[mask]
-                        else:
-                            # Grayscale image
-                            pixel_values = image_data[mask]
-                        
-                        # Calculate statistics
-                        mean_val = float(np.mean(pixel_values))
-                        std_val = float(np.std(pixel_values))
-                        min_val = float(np.min(pixel_values))
-                        max_val = float(np.max(pixel_values))
-                        pixel_count = int(np.sum(mask))
-                        
-                        # Get bounds for coordinate info
-                        x_min, y_min, x_max, y_max = roi.get_bounds()
+                                roi_data = np.mean(roi_data, axis=1)
                         
                         stats[roi.label] = {
-                            'mean': mean_val,
-                            'std': std_val,
-                            'min': min_val,
-                            'max': max_val,
-                            'pixel_count': pixel_count,
-                            'bounds': f"({x_min}, {y_min}) to ({x_max}, {y_max})"
+                            'mean': float(np.mean(roi_data)),
+                            'std': float(np.std(roi_data)),
+                            'min': float(np.min(roi_data)),
+                            'max': float(np.max(roi_data)),
+                            'pixel_count': int(np.sum(mask)),
+                            'roi_type': roi.roi_type.value
                         }
                     else:
                         stats[roi.label] = {
-                            'error': 'No pixels selected or all pixels out of bounds'
+                            'error': 'No pixels in mask',
+                            'roi_type': roi.roi_type.value
                         }
-                        
+            
             except Exception as e:
                 self.logger.error(f"Error calculating statistics for {roi.label}: {e}")
                 stats[roi.label] = {
-                    'error': f'Calculation failed: {str(e)}'
+                    'error': f'Calculation failed: {str(e)}',
+                    'roi_type': getattr(roi, 'roi_type', ROIType.POINT).value
                 }
         
         return stats
+    
+    def _update_status(self, message: str):
+        """Update status through callback"""
+        if self.status_callback:
+            self.status_callback(message)
+        else:
+            # Fallback: just log the message if no callback
+            self.logger.info(f"ROI Status: {message}")
+    
+    def export_rois(self) -> List[Dict[str, Any]]:
+        """Export ROI data for saving/analysis"""
+        return [
+            {
+                'label': roi.label,
+                'type': roi.roi_type.value,
+                'coordinates': roi.coordinates,
+                'color': roi.color
+            }
+            for roi in self.rois
+        ]

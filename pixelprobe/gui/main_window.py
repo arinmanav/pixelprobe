@@ -821,13 +821,18 @@ class PixelProbeApp:
             self.roi_point_btn.configure(fg_color=active_color)
 
     def clear_rois(self):
-        """Clear all ROIs"""
-        if self.roi_selector:
-            self.roi_selector.clear_rois()
-            if self.current_image is not None:
-                current_title = self.subplot.get_title()
-                self.display_image(self.current_image, current_title)
-            self.update_status("All ROIs cleared and display refreshed")
+        """Clear all ROIs without disrupting ROI mode"""
+        if not self.roi_selector:
+            return
+        
+        # Clear ROIs from selector
+        self.roi_selector.clear_rois()
+        
+        # Just redraw the canvas without calling display_image
+        if self.current_image is not None:
+            self.canvas.draw()
+        
+        self.update_status("All ROIs cleared - selection mode preserved")
 
     def _deactivate_roi_mode(self):
         """Deactivate ROI selection mode"""
@@ -1356,8 +1361,7 @@ class PixelProbeApp:
             self.logger.warning(f"Failed to redraw ROI visual: {e}")
 
     def display_image(self, image_data: np.ndarray, title: str = "Image"):
-        """Display image with enhanced colorbar customization using original array values"""
-        
+        """Enhanced display with ROI preservation and colorbar customization"""
         if image_data is None:
             self.logger.error("Cannot display None image data")
             return
@@ -1369,15 +1373,21 @@ class PixelProbeApp:
             # Store current title
             self.current_title = title
             
-            # Store current ROIs if they exist
+            # CRITICAL FIX: Store current ROI state (preserve mode even without existing ROIs)
             existing_rois = []
             roi_mode_was_active = False
             current_roi_type = None
-            
-            if self.roi_selector and self.roi_selector.rois:
-                existing_rois = self.roi_selector.rois.copy()
+            selection_was_active = False
+
+            if self.roi_selector:
+                # Always preserve ROI mode state, regardless of existing ROIs
                 roi_mode_was_active = self.roi_mode_active
                 current_roi_type = self.roi_selector.current_roi_type
+                selection_was_active = self.roi_selector.selection_active
+                
+                # Only copy ROIs if they exist
+                if self.roi_selector.rois:
+                    existing_rois = self.roi_selector.rois.copy()
             
             # FIXED: Completely clear and recreate the figure to avoid sizing issues
             self.figure.clear()
@@ -1399,7 +1409,7 @@ class PixelProbeApp:
                     status_callback=self.update_status
                 )
                 
-                # Restore ROI mode state
+                # CRITICAL FIX: Restore ROI mode state
                 if roi_mode_was_active:
                     self.roi_mode_active = True
                     if current_roi_type:
@@ -1410,8 +1420,9 @@ class PixelProbeApp:
                         elif current_roi_type.value == 'point':
                             self._update_roi_button_colors("point")
                     
-                    # Reactivate ROI selection if it was active
-                    self.roi_selector.activate_selection()
+                    # CRITICAL FIX: Reactivate ROI selection if it was active
+                    if selection_was_active:
+                        self.roi_selector.activate_selection()
             
             # Get current interpolation method
             interpolation = getattr(self, 'current_display_interpolation', 'nearest')
@@ -1554,7 +1565,11 @@ class PixelProbeApp:
             self.update_status("Data loading cancelled")
             return
         
-        # Set directory in array handler
+        # CRITICAL FIX: Force clear array handler cache before setting new directory
+        self.array_handler.clear_cache()
+        self.logger.info("Cleared array handler cache before loading new directory")
+        
+        # Set directory in array handler (this will also clear cache)
         if not self.array_handler.set_directory(directory):
             self.update_status("No valid array files found in directory")
             return
@@ -1563,7 +1578,7 @@ class PixelProbeApp:
         
         # Show array selection dialog
         self._show_array_selection_dialog()
-    
+
     def _show_array_selection_dialog(self):
         """Show dialog for selecting array items"""
         from pixelprobe.gui.dialogs.array_dialogs import ArraySelectionDialog
@@ -1581,63 +1596,88 @@ class PixelProbeApp:
         
         # Load arrays based on operation
         self._load_selected_arrays(selected_items, operation)
-    
+
     def _load_selected_arrays(self, selected_items, operation):
-        """Enhanced version with camera roll for multiple items"""
+        """Complete data loading with proper camera roll reset"""
         try:
             self.update_status(f"Loading {len(selected_items)} items...")
             
+            # CRITICAL FIX: Force complete reset of everything
+            self.current_array = None
+            self.current_image = None
+            
+            # CRITICAL FIX: Completely destroy camera roll before any operation
+            if hasattr(self, 'camera_roll') and self.camera_roll:
+                # Stop any ongoing thumbnail generation
+                self.camera_roll.thumbnail_loading_active = False
+                
+                # Unbind ALL keyboard shortcuts first
+                try:
+                    self.root.unbind('<Left>')
+                    self.root.unbind('<Right>')  
+                    self.root.unbind('<Home>')
+                    self.root.unbind('<End>')
+                    self.root.unbind('<Escape>')
+                except:
+                    pass
+                
+                # Hide and destroy the UI
+                self.camera_roll._hide_camera_roll()
+                
+                # Completely reset camera roll object
+                self.camera_roll = None
+            
             if operation == "single":
-                # Single item (hide camera roll)
-                if hasattr(self, 'camera_roll') and self.camera_roll:
-                    self.camera_roll._hide_camera_roll()
-                    
+                # Single item - no camera roll
                 item_num = selected_items[0]
                 array_data = self.array_handler.load_item(item_num)
                 
                 if array_data is not None:
                     self.current_array = array_data
                     self.current_image = self._array_to_display_image(array_data)
+                    # FORCE immediate display
                     self.display_image(self.current_image, f"Array Item {item_num}")
                     self.update_status(f"Loaded item {item_num} - Shape: {array_data.shape}")
+                    self.logger.info(f"Single item loaded and displayed: {item_num}")
                 else:
                     self.update_status(f"Failed to load item {item_num}")
             
             elif operation == "multiple":
-                # Multiple items - show camera roll
+                # Multiple items - create fresh camera roll
                 arrays = self.array_handler.load_multiple_items(selected_items)
                 
                 if arrays:
-                    # Create camera roll if needed
-                    if not hasattr(self, 'camera_roll') or not self.camera_roll:
-                        from pixelprobe.gui.camera_roll import CameraRollInterface
-                        self.camera_roll = CameraRollInterface(self)
+                    self.logger.info(f"Loading {len(arrays)} arrays into fresh camera roll")
                     
-                    # Load into camera roll
+                    # Force create completely new camera roll
+                    from pixelprobe.gui.camera_roll import CameraRollInterface
+                    self.camera_roll = CameraRollInterface(self)
+                    
+                    # Load data (this will show camera roll and display first frame)
                     self.camera_roll.load_multiple_frames(arrays)
                     self.update_status(f"Loaded {len(arrays)} frames - Navigate with ← → keys or thumbnails")
+                    self.logger.info(f"Camera roll loaded with {len(arrays)} frames")
                 else:
                     self.update_status("Failed to load any items")
             
             elif operation == "average":
-                # Average (hide camera roll)
-                if hasattr(self, 'camera_roll') and self.camera_roll:
-                    self.camera_roll._hide_camera_roll()
-                    
+                # Average operation - no camera roll needed
                 averaged_array = self.array_handler.average_items(selected_items)
                 
                 if averaged_array is not None:
                     self.current_array = averaged_array
                     self.current_image = self._array_to_display_image(averaged_array)
+                    # FORCE immediate display
                     self.display_image(self.current_image, f"Averaged Items {selected_items}")
                     self.update_status(f"Averaged {len(selected_items)} items - Shape: {averaged_array.shape}")
+                    self.logger.info(f"Averaged data loaded and displayed")
                 else:
                     self.update_status("Failed to average items")
                     
         except Exception as e:
             self.logger.error(f"Error loading arrays: {e}")
             self.update_status(f"Error loading arrays: {str(e)}")
-    
+
     def _array_to_display_image(self, array_data):
         """Convert array data to displayable image format"""
         # Normalize array data for display
@@ -1650,7 +1690,7 @@ class PixelProbeApp:
             return normalized.astype(np.uint8)
 
     def load_image_action(self):
-        """Handle load image button click"""
+        """Handle load image button click with complete reset"""
         self.logger.info("Load image action triggered")
         self.update_status("Selecting image file...")
         
@@ -1661,13 +1701,51 @@ class PixelProbeApp:
             return
         
         try:
+            # CRITICAL FIX: Complete reset before loading
+            self.current_array = None
+            self.current_image = None
+            self.current_items = []
+            self.current_operation = None
+            
+            # CRITICAL FIX: Completely destroy camera roll
+            if hasattr(self, 'camera_roll') and self.camera_roll:
+                # Stop any ongoing operations
+                self.camera_roll.thumbnail_loading_active = False
+                
+                # Unbind keyboard shortcuts
+                try:
+                    self.root.unbind('<Left>')
+                    self.root.unbind('<Right>')
+                    self.root.unbind('<Home>')
+                    self.root.unbind('<End>')
+                    self.root.unbind('<Escape>')
+                except:
+                    pass
+                
+                # Hide and destroy
+                self.camera_roll._hide_camera_roll()
+                self.camera_roll = None
+                self.logger.info("Camera roll completely destroyed for image loading")
+            
+            # Clear the current display
+            try:
+                self.figure.clear()
+                self.subplot = self.figure.add_subplot(111)
+                self.subplot.set_title("Loading new image...")
+                self.subplot.axis('off')
+                self.canvas.draw()
+            except:
+                pass
+            
             # Load image
             image_data = self.image_loader.load_image(image_path)
             if image_data is not None:
                 self.current_image = image_data
                 self.current_array = image_data  # For processing operations
+                # FORCE immediate display
                 self.display_image(image_data, f"Image: {image_path.name}")
                 self.update_status(f"Loaded image: {image_path.name} - Shape: {image_data.shape}")
+                self.logger.info(f"New image loaded and displayed: {image_path.name}")
             else:
                 self.update_status("Failed to load image")
         except Exception as e:
