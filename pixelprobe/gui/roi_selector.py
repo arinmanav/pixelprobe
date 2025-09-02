@@ -434,7 +434,7 @@ class ROISelector:
         self.logger.info(f"Added ROI: {roi.label}")
 
     def _visualize_roi(self, roi: ROI):
-        """Add visual representation of ROI with frame tight around selected pixels"""
+        """Add visual representation of ROI with COLOR-CODED labels and SPECIFIC positioning"""
         if roi.roi_type == ROIType.RECTANGLE:
             # Get selected area coordinates
             x = int(round(roi.coordinates['x']))
@@ -473,21 +473,62 @@ class ROISelector:
             )
             self.subplot.add_patch(fill_rect)
             
-            # FIXED: Add size label OUTSIDE and ABOVE the frame
-            label_x = x + w/2  # Center of selected area
-            label_y = y_max_boundary  # CHANGED: Use TOP boundary instead of bottom
-            
+            # ROI NAME LABEL: TOP CENTER - GREEN (FAR ABOVE ROI)
+            roi_name_x = x + w/2  # Center horizontally
+            roi_name_y = y_min_boundary - 6  # ABOVE the ROI, far enough
             self.subplot.annotate(
-                f"{w}×{h}px",
-                (label_x, label_y),
-                xytext=(0, 10), textcoords='offset points',  # CHANGED: positive offset = ABOVE
-                fontsize=11, color=roi.color, weight='bold',
-                ha='center', va='bottom',  # CHANGED: bottom alignment
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor=roi.color, alpha=0.9)
+                roi.label,
+                (roi_name_x, roi_name_y),
+                xytext=(0, 0), textcoords='offset points',
+                fontsize=14, color='blue', weight='bold',
+                ha='center', va='bottom',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='blue', alpha=0.95, linewidth=2)
             )
             
-            # Add corner markers to show exact pixel boundaries
-            corner_size = 0.1
+            # DIMENSIONS LABEL: BOTTOM CENTER - GREEN (FAR BELOW ROI)
+            dimension_label_x = x + w/2  # Center horizontally
+            dimension_label_y = y_min_boundary - 3.5  # BELOW the ROI, far enough
+            dimension_text = f"{w}×{h}px"
+            self.subplot.annotate(
+                dimension_text,
+                (dimension_label_x, dimension_label_y),
+                xytext=(0, 0), textcoords='offset points',
+                fontsize=14, color='blue', weight='bold',
+                ha='center', va='top',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='blue', alpha=0.95, linewidth=2)
+            )
+            
+            # START PIXEL LABEL: BOTTOM-LEFT CORNER - GREEN (FAR FROM ROI)
+            first_pixel = roi.coordinates.get('first_pixel', {'x': x, 'y': y})
+            start_label_x = x_min_boundary - 3  # FAR left of ROI
+            start_label_y = y_min_boundary  # FAR below ROI
+            self.subplot.annotate(
+                f"Start: ({int(first_pixel['x'])},{int(first_pixel['y'])})",
+                (start_label_x, start_label_y),
+                xytext=(0, 0), textcoords='offset points',
+                fontsize=14, color='green', weight='bold',
+                ha='right', va='top',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='green', alpha=0.95, linewidth=2)
+            )
+            
+            # END PIXEL LABEL: BOTTOM-RIGHT CORNER - RED (FAR FROM ROI)
+            last_pixel = roi.coordinates.get('last_pixel', {'x': x+w-1, 'y': y+h-1})
+            end_label_x = x_max_boundary + 3  # FAR right of ROI
+            end_label_y = y_max_boundary - 2  # FAR below ROI
+            self.subplot.annotate(
+                f"End: ({int(last_pixel['x'])},{int(last_pixel['y'])})",
+                (end_label_x, end_label_y),
+                xytext=(0, 0), textcoords='offset points',
+                fontsize=14, color='red', weight='bold',
+                ha='left', va='top',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='red', alpha=0.95, linewidth=2)
+            )
+            
+            # Add corner markers (smaller and less intrusive)
             corners = [
                 (x_min_boundary, y_min_boundary),  # bottom-left
                 (x_max_boundary, y_min_boundary),  # bottom-right  
@@ -497,8 +538,8 @@ class ROISelector:
             
             for corner_x, corner_y in corners:
                 self.subplot.plot(corner_x, corner_y, 
-                                marker='s', markersize=4, 
-                                color=roi.color, alpha=0.8)
+                                marker='s', markersize=3, 
+                                color=roi.color, alpha=0.7)
         
         elif roi.roi_type == ROIType.POINT:
             # Enhanced point visualization - frame around single pixel
@@ -533,14 +574,26 @@ class ROISelector:
                 markeredgewidth=3, markerfacecolor='none', alpha=0.9
             )
             
-            # FIXED: Add pixel coordinates OUTSIDE and ABOVE the pixel
+            # ROI NAME: ABOVE THE PIXEL - GREEN (FAR ENOUGH)
+            self.subplot.annotate(
+                roi.label,
+                (x, y + 0.5),  # Position above the pixel
+                xytext=(0, 25), textcoords='offset points',  # FAR above
+                fontsize=14, color='green', weight='bold',
+                ha='center', va='bottom',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='green', alpha=0.95, linewidth=2)
+            )
+
+            # PIXEL COORDINATES: BELOW THE PIXEL - GREEN (FAR ENOUGH)
             self.subplot.annotate(
                 f"({x}, {y})",
-                (x, y + 0.5),  # CHANGED: Use top of pixel
-                xytext=(0, 10), textcoords='offset points',  # CHANGED: positive offset = ABOVE
-                fontsize=12, color=roi.color,
-                ha='center', va='bottom',  # CHANGED: bottom alignment
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
+                (x, y - 0.5),  # Position below the pixel
+                xytext=(0, -25), textcoords='offset points',  # FAR below
+                fontsize=14, color='green', weight='bold',
+                ha='center', va='top',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                        edgecolor='green', alpha=0.95, linewidth=2)
             )
         
         elif roi.roi_type == ROIType.MULTI_POINT:
@@ -572,19 +625,41 @@ class ROISelector:
                 
                 # Center marker
                 self.subplot.plot(
-                    x, y, marker='o', color=roi.color, markersize=8,
+                    x, y, marker='o', color=roi.color,
+                    markersize=8,
                     markeredgewidth=2, markerfacecolor='none', alpha=0.9
                 )
                 
-                # Add point number
+                # Point number positioned OUTSIDE each point - GREEN (FAR ENOUGH)
                 self.subplot.annotate(
                     f"{i+1}",
                     (x, y),
+                    xytext=(20, 20), textcoords='offset points',  # FAR from pixel
+                    fontsize=11, color='green', weight='bold',
+                    ha='left', va='bottom',
+                    bbox=dict(boxstyle='circle,pad=0.3', facecolor='white', 
+                            edgecolor='green', alpha=0.95, linewidth=2)
+                )
+
+            # ROI NAME for multi-point - GREEN (positioned ABOVE the group, FAR ENOUGH)
+            if roi.coordinates['points']:
+                # Find the top-most point for label positioning (ABOVE the group)
+                top_y = max(p['y'] for p in roi.coordinates['points'])
+                center_x = sum(p['x'] for p in roi.coordinates['points']) / len(roi.coordinates['points'])
+                
+                label_x = center_x
+                label_y = top_y + 2.0  # ABOVE the group, FAR enough
+                self.subplot.annotate(
+                    roi.label,
+                    (label_x, label_y),
                     xytext=(0, 0), textcoords='offset points',
-                    fontsize=8, color='white', weight='bold',
-                    ha='center', va='center'
+                    fontsize=14, color='green', weight='bold',
+                    ha='center', va='bottom',
+                    bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                            edgecolor='green', alpha=0.95, linewidth=2)
                 )
         
+        # Refresh the display
         self.figure.canvas.draw_idle()
 
     def _log_roi_coordinates(self, roi: ROI):

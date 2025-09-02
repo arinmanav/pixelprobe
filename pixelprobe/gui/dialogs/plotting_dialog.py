@@ -671,85 +671,155 @@ class ROIFramePlottingDialog:
                 }
 
     def _create_mathematical_operations_section(self):
-        """Create mathematical operations section for trace arithmetic - FIXED LAYOUT"""
-        if not self.roi_selector or not self.roi_selector.rois:
+        """Create enhanced mathematical operations section with better layout"""
+        # Only show if there are ROIs available
+        if not hasattr(self, 'roi_selector') or not self.roi_selector.rois:
             return
         
+        # Main operations frame with enhanced styling
         operations_frame = ctk.CTkFrame(self.control_scroll)
-        operations_frame.pack(fill="x", padx=5, pady=5)
+        operations_frame.pack(fill="x", padx=5, pady=8)
         
-        ctk.CTkLabel(operations_frame, text="🔢 Mathematical Operations", 
-                    font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
+        # Title with better visibility
+        title_frame = ctk.CTkFrame(operations_frame, fg_color="transparent")
+        title_frame.pack(fill="x", padx=5, pady=5)
         
-        operations_scroll = ctk.CTkScrollableFrame(operations_frame, height=350)
+        ctk.CTkLabel(title_frame, text="🔢 Mathematical Operations", 
+                    font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        
+        # Status indicator
+        ops_count = len(getattr(self, 'mathematical_operations', {}))
+        status_text = f"({ops_count} operations)" if ops_count > 0 else "(none yet)"
+        ctk.CTkLabel(title_frame, text=status_text, 
+                    font=ctk.CTkFont(size=11), text_color="gray").pack(side="right")
+        
+        # Scrollable operations container with FIXED height
+        operations_scroll = ctk.CTkScrollableFrame(operations_frame, height=400)
         operations_scroll.pack(fill="x", padx=8, pady=5)
         
+        # Initialize operations storage
         if not hasattr(self, 'mathematical_operations'):
             self.mathematical_operations = {}
             self.operation_controls = {}
             self.operation_counter = 0
         
-        add_operation_frame = ctk.CTkFrame(operations_scroll)
-        add_operation_frame.pack(fill="x", padx=2, pady=2)
+        # CREATE NEW OPERATION SECTION
+        create_frame = ctk.CTkFrame(operations_scroll)
+        create_frame.pack(fill="x", padx=3, pady=5)
         
-        ctk.CTkLabel(add_operation_frame, text="Create New Operation:",
-                    font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(5, 2))
+        # Section header
+        header_frame = ctk.CTkFrame(create_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=5, pady=(8, 5))
         
-        operation_input_frame = ctk.CTkFrame(add_operation_frame)
-        operation_input_frame.pack(fill="x", padx=5, pady=5)
+        ctk.CTkLabel(header_frame, text="➕ Create New Operation:",
+                    font=ctk.CTkFont(weight="bold", size=13)).pack(side="left")
         
-        # Name input - BETTER LAYOUT
-        name_frame = ctk.CTkFrame(operation_input_frame)
-        name_frame.pack(fill="x", pady=3)
+        # Help button prominently placed
+        help_btn = ctk.CTkButton(header_frame, text="Syntax Help", width=90, height=25,
+                                fg_color="blue", hover_color="darkblue",
+                                command=self._show_expression_help)
+        help_btn.pack(side="right", padx=5)
         
-        ctk.CTkLabel(name_frame, text="Name:", width=70).pack(side="left")
-        self.new_operation_name = ctk.CTkEntry(name_frame, width=200, placeholder_text="e.g., ROI1_plus_ROI2")
+        # Input form with better layout
+        input_container = ctk.CTkFrame(create_frame)
+        input_container.pack(fill="x", padx=5, pady=5)
+        
+        # Name input row
+        name_row = ctk.CTkFrame(input_container)
+        name_row.pack(fill="x", padx=5, pady=3)
+        
+        ctk.CTkLabel(name_row, text="Name:", width=80, 
+                    font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self.new_operation_name = ctk.CTkEntry(
+            name_row, width=220, 
+            placeholder_text="e.g., ROI1_plus_ROI2",
+            font=ctk.CTkFont(size=11)
+        )
         self.new_operation_name.pack(side="left", padx=5, fill="x", expand=True)
         
-        # Expression input - BETTER LAYOUT
-        expr_frame = ctk.CTkFrame(operation_input_frame)
-        expr_frame.pack(fill="x", pady=3)
+        # Expression input row
+        expr_row = ctk.CTkFrame(input_container)
+        expr_row.pack(fill="x", padx=5, pady=3)
         
-        ctk.CTkLabel(expr_frame, text="Expression:", width=70).pack(side="left")
-        self.new_operation_expr = ctk.CTkEntry(expr_frame, width=180, placeholder_text="e.g., A + B, A * 2")
-        self.new_operation_expr.pack(side="left", padx=5)
+        ctk.CTkLabel(expr_row, text="Expression:", width=80,
+                    font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self.new_operation_expr = ctk.CTkEntry(
+            expr_row, width=220,
+            placeholder_text="e.g., A + B, (A + B) / 2, A * 2",
+            font=ctk.CTkFont(size=11)
+        )
+        self.new_operation_expr.pack(side="left", padx=5, fill="x", expand=True)
         
-        help_btn = ctk.CTkButton(expr_frame, text="Help", width=50, height=28,
-                                command=self._show_expression_help)
-        help_btn.pack(side="left", padx=5)
+        # Variables section with compact grid layout
+        var_section = ctk.CTkFrame(input_container)
+        var_section.pack(fill="x", padx=5, pady=3)
         
-        # Variables section - COMPACT LAYOUT
-        var_frame = ctk.CTkFrame(operation_input_frame)
-        var_frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(var_section, text="Variables:", width=80,
+                    font=ctk.CTkFont(weight="bold")).pack(side="left", anchor="n")
         
-        ctk.CTkLabel(var_frame, text="Variables:", width=70).pack(side="left", anchor="n")
-        
-        self.var_assignment_frame = ctk.CTkFrame(var_frame)
+        # Variable assignment frame
+        self.var_assignment_frame = ctk.CTkFrame(var_section)
         self.var_assignment_frame.pack(side="left", fill="x", expand=True, padx=5)
         
         self._create_variable_assignments()
         
-        # Create button - BETTER SIZE AND POSITION
-        create_btn = ctk.CTkButton(operation_input_frame, text="Create Operation", 
-                                width=280, height=35, fg_color="green",
-                                command=self._create_mathematical_operation)
-        create_btn.pack(pady=8)
+        # Create operation button - more prominent
+        create_btn_frame = ctk.CTkFrame(input_container)
+        create_btn_frame.pack(fill="x", padx=5, pady=8)
         
-        # Separator
-        separator = ctk.CTkFrame(operations_scroll, height=2)
-        separator.pack(fill="x", padx=2, pady=5)
+        create_btn = ctk.CTkButton(
+            create_btn_frame, 
+            text="➕ Create Operation", 
+            width=300, height=40, 
+            fg_color="green", hover_color="darkgreen",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._create_mathematical_operation
+        )
+        create_btn.pack(pady=5)
         
-        # Existing operations
-        self.existing_operations_frame = ctk.CTkFrame(operations_scroll)
-        self.existing_operations_frame.pack(fill="x", padx=2, pady=5)
+        # Separator line
+        separator = ctk.CTkFrame(operations_scroll, height=3, fg_color="gray")
+        separator.pack(fill="x", padx=10, pady=10)
         
-        ctk.CTkLabel(self.existing_operations_frame, text="Existing Operations:",
-                    font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(5, 2))
+        # EXISTING OPERATIONS SECTION
+        existing_frame = ctk.CTkFrame(operations_scroll)
+        existing_frame.pack(fill="x", padx=3, pady=5)
         
-        self.operations_list_frame = ctk.CTkScrollableFrame(self.existing_operations_frame, height=180)
+        # Section header for existing operations
+        existing_header = ctk.CTkFrame(existing_frame, fg_color="transparent")
+        existing_header.pack(fill="x", padx=5, pady=(8, 5))
+        
+        ctk.CTkLabel(existing_header, text="📋 Existing Operations:",
+                    font=ctk.CTkFont(weight="bold", size=13)).pack(side="left")
+        
+        # Count display
+        count_text = f"{len(self.mathematical_operations)} operations" if hasattr(self, 'mathematical_operations') else "0 operations"
+        ctk.CTkLabel(existing_header, text=count_text,
+                    font=ctk.CTkFont(size=11), text_color="gray").pack(side="right")
+        
+        # Operations list with GUARANTEED space for buttons
+        self.operations_list_frame = ctk.CTkScrollableFrame(existing_frame, height=250)
         self.operations_list_frame.pack(fill="x", padx=5, pady=5)
         
+        # Refresh the operations list
         self._refresh_operations_list()
+        
+        # Add usage instructions at bottom
+        instructions_frame = ctk.CTkFrame(operations_scroll)
+        instructions_frame.pack(fill="x", padx=3, pady=5)
+        
+        ctk.CTkLabel(instructions_frame, text="💡 Usage Tips:",
+                    font=ctk.CTkFont(weight="bold", size=12)).pack(anchor="w", padx=5, pady=(5, 2))
+        
+        tips_text = """• Use variables A, B, C, D to reference ROI traces
+    • Supported operations: +, -, *, /, **, abs(), sqrt(), log()
+    • Example: (A + B) / 2 calculates average of two ROIs
+    • Use "Show" checkbox to toggle visibility in plot
+    • Mathematical operations appear as colored traces"""
+        
+        ctk.CTkLabel(instructions_frame, text=tips_text,
+                    font=ctk.CTkFont(size=10), 
+                    justify="left").pack(anchor="w", padx=15, pady=(0, 8))
 
     def _create_variable_assignments(self):
         """Create variable assignment dropdowns - COMPACT LAYOUT"""
@@ -1001,7 +1071,7 @@ class ROIFramePlottingDialog:
             return None
 
     def _refresh_operations_list(self):
-        """Refresh the list of existing operations"""
+        """Refresh the list of existing operations with FIXED button visibility"""
         for widget in self.operations_list_frame.winfo_children():
             widget.destroy()
         
@@ -1010,30 +1080,58 @@ class ROIFramePlottingDialog:
             return
         
         for name, operation in self.mathematical_operations.items():
-            op_frame = ctk.CTkFrame(self.operations_list_frame)
-            op_frame.pack(fill="x", padx=2, pady=2)
+            # Main operation container with fixed height
+            op_frame = ctk.CTkFrame(self.operations_list_frame, height=80)
+            op_frame.pack(fill="x", padx=2, pady=3)
+            op_frame.pack_propagate(False)  # Maintain fixed height
             
+            # Left side - Operation information
             info_frame = ctk.CTkFrame(op_frame)
-            info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=2)
+            info_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
             
-            ctk.CTkLabel(info_frame, text=name, font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+            # Operation name
+            ctk.CTkLabel(info_frame, text=name, font=ctk.CTkFont(weight="bold", size=12)).pack(anchor="w", padx=5, pady=(2, 0))
             
+            # Expression info
+            ctk.CTkLabel(info_frame, text=f"Expression: {operation['expression']}", 
+                        font=ctk.CTkFont(size=10)).pack(anchor="w", padx=5, pady=(0, 1))
+            
+            # Variables info
             var_info = ", ".join([f"{var}={trace}" for var, trace in operation['variables'].items()])
-            ctk.CTkLabel(info_frame, text=f"Expression: {operation['expression']}").pack(anchor="w")
             ctk.CTkLabel(info_frame, text=f"Variables: {var_info}", 
-                        font=ctk.CTkFont(size=10)).pack(anchor="w")
+                        font=ctk.CTkFont(size=9), text_color="gray").pack(anchor="w", padx=5, pady=(0, 2))
             
-            btn_frame = ctk.CTkFrame(op_frame)
-            btn_frame.pack(side="right", padx=5, pady=2)
+            # Right side - Control buttons with fixed width
+            btn_frame = ctk.CTkFrame(op_frame, width=140)
+            btn_frame.pack(side="right", fill="y", padx=5, pady=5)
+            btn_frame.pack_propagate(False)  # Maintain fixed width
             
-            visibility_var = tk.BooleanVar(value=operation['visible'])
-            visibility_cb = ctk.CTkCheckBox(btn_frame, text="Show", variable=visibility_var,
-                                        command=lambda n=name, v=visibility_var: self._toggle_operation_visibility(n, v))
-            visibility_cb.pack(side="left", padx=2)
+            # Show/Hide checkbox - LARGER and more visible
+            visibility_var = tk.BooleanVar(value=operation.get('visible', True))
+            visibility_cb = ctk.CTkCheckBox(
+                btn_frame, 
+                text="Show", 
+                variable=visibility_var,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda n=name, v=visibility_var: self._toggle_operation_visibility(n, v),
+                width=120,
+                height=25
+            )
+            visibility_cb.pack(padx=5, pady=(5, 2), anchor="center")
             
-            delete_btn = ctk.CTkButton(btn_frame, text="Delete", width=60, height=25,
-                                    command=lambda n=name: self._delete_operation(n))
-            delete_btn.pack(side="left", padx=2)
+            # Delete button - LARGER and more visible
+            delete_btn = ctk.CTkButton(
+                btn_frame, 
+                text="Delete", 
+                width=120,
+                height=30,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color="red",
+                hover_color="darkred",
+                command=lambda n=name: self._delete_operation(n)
+            )
+            delete_btn.pack(padx=5, pady=(2, 5), anchor="center")
+
 
     def _toggle_operation_visibility(self, operation_name, visibility_var):
         """Toggle visibility of a mathematical operation"""
@@ -1066,9 +1164,9 @@ class ROIFramePlottingDialog:
                 self._create_variable_assignments()
             except:
                 pass
-            
+
     def _plot_data(self):
-        """Create the plot with current data - FIXED with proper average plotting and StringVar handling"""
+        """Create the plot with current data - FIXED with proper average plotting and WORKING GRID SETTINGS"""
         try:
             # Get selected ROIs
             selected_rois = [roi_name for roi_name, var in self.roi_checkboxes.items() if var.get()]
@@ -1232,15 +1330,27 @@ class ROIFramePlottingDialog:
                 legend_location = getattr(self, 'legend_location_var', tk.StringVar(value='best')).get()
                 self.subplot.legend(loc=legend_location, fontsize=legend_font_size)
             
-            # Add grid - FIXED to properly toggle
+            # FIXED GRID SETTINGS - Now uses the correct variables and slider values
             try:
-                show_grid = getattr(self, 'show_grid_var', tk.BooleanVar(value=True))
+                # Use the CORRECT variable names from the UI
+                show_grid = getattr(self, 'grid_var', tk.BooleanVar(value=True))
+                grid_alpha = getattr(self, 'grid_alpha_var', tk.DoubleVar(value=0.3))
+                grid_width = getattr(self, 'grid_width_var', tk.DoubleVar(value=0.8))
+                
                 if show_grid.get():
-                    self.subplot.grid(True, alpha=0.3)
+                    # Apply grid with the USER-CONTROLLED alpha and linewidth settings
+                    self.subplot.grid(
+                        True, 
+                        alpha=grid_alpha.get(),  # Use slider value
+                        linewidth=grid_width.get()  # Use slider value
+                    )
                 else:
+                    # Turn off grid completely
                     self.subplot.grid(False)
                     self.subplot.grid(False, which='minor')
-            except:
+            except Exception as e:
+                print(f"Grid setting error: {e}")
+                # Fallback - no grid
                 self.subplot.grid(False)
             
             # Draw the plot
