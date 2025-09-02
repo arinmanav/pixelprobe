@@ -1594,6 +1594,235 @@ class ROIFramePlottingDialog:
             self.trace_custom[roi_name]['color'] = color[1]
             self.trace_controls[roi_name]['color_btn'].configure(fg_color=color[1])
 
+    def _create_individual_traces_section(self):
+        """Create individual trace customization including BOTH ROI traces AND mathematical operation traces"""
+        # Clear existing traces section first
+        for widget in self.control_scroll.winfo_children():
+            if hasattr(widget, '_section_type') and widget._section_type == 'traces':
+                widget.destroy()
+        
+        traces_frame = ctk.CTkFrame(self.control_scroll)
+        traces_frame.pack(fill="x", padx=5, pady=5)
+        traces_frame._section_type = 'traces'  # Mark for cleanup
+        
+        ctk.CTkLabel(traces_frame, text="🎨 Trace Customization", 
+                    font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
+        
+        traces_scroll = ctk.CTkScrollableFrame(traces_frame, height=350)  # Increased height
+        traces_scroll.pack(fill="x", padx=8, pady=5)
+        
+        # Initialize marker options
+        marker_options = ['o', 's', '^', 'v', 'D', '*', '+', 'x', 'none']
+        linestyle_options = ['-', '--', '-.', ':']
+        
+        # Count all available traces
+        all_trace_names = []
+        
+        # Add regular ROI traces
+        if self.roi_selector and self.roi_selector.rois:
+            all_trace_names.extend([roi.label for roi in self.roi_selector.rois])
+        
+        # Add mathematical operation traces
+        if hasattr(self, 'mathematical_operations'):
+            all_trace_names.extend(list(self.mathematical_operations.keys()))
+        
+        if not all_trace_names:
+            ctk.CTkLabel(traces_scroll, text="No traces available for customization").pack(pady=10)
+            return
+        
+        # SECTION 1: REGULAR ROI TRACES
+        if self.roi_selector and self.roi_selector.rois:
+            roi_section = ctk.CTkFrame(traces_scroll)
+            roi_section.pack(fill="x", padx=3, pady=5)
+            
+            ctk.CTkLabel(roi_section, text="📍 ROI Traces", 
+                        font=ctk.CTkFont(weight="bold", size=13)).pack(pady=(8, 5))
+            
+            default_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+            default_markers = ['o', 's', '^', 'v', 'D', '*']
+            
+            for i, roi in enumerate(self.roi_selector.rois):
+                roi_name = roi.label
+                
+                # Initialize defaults if not exists
+                if roi_name not in self.trace_custom:
+                    self.trace_custom[roi_name] = {
+                        'color': default_colors[i % len(default_colors)],
+                        'label': roi_name,
+                        'visible': True,
+                        'linewidth': 2.0,
+                        'linestyle': '-',
+                        'marker': default_markers[i % len(default_markers)],
+                        'markersize': 6
+                    }
+                
+                self._create_trace_control_row(roi_section, roi_name, "📍", marker_options, linestyle_options)
+        
+        # SECTION 2: MATHEMATICAL OPERATION TRACES
+        if hasattr(self, 'mathematical_operations') and self.mathematical_operations:
+            math_section = ctk.CTkFrame(traces_scroll)
+            math_section.pack(fill="x", padx=3, pady=5)
+            
+            ctk.CTkLabel(math_section, text="🔢 Mathematical Operation Traces", 
+                        font=ctk.CTkFont(weight="bold", size=13)).pack(pady=(8, 5))
+            
+            for op_name in self.mathematical_operations.keys():
+                if op_name in self.trace_custom:  # Should already exist from creation
+                    self._create_trace_control_row(math_section, op_name, "🔢", marker_options, linestyle_options)
+        
+        # SECTION 3: AVERAGE TRACE (if applicable)
+        avg_section = ctk.CTkFrame(traces_scroll)
+        avg_section.pack(fill="x", padx=3, pady=5)
+        
+        ctk.CTkLabel(avg_section, text="📈 Average Trace", 
+                    font=ctk.CTkFont(weight="bold", size=13)).pack(pady=(8, 5))
+        
+        # Initialize average trace settings
+        if not hasattr(self, 'avg_trace_settings'):
+            self.avg_trace_settings = {
+                'color': '#FF0000',  # Red for average
+                'label': 'Average',
+                'visible': True,
+                'linewidth': 3.0,
+                'linestyle': '-',
+                'marker': 'o',
+                'markersize': 8
+            }
+        
+        self._create_average_trace_controls(avg_section, marker_options, linestyle_options)
+
+    def _create_trace_control_row(self, parent_frame, trace_name, icon, marker_options, linestyle_options):
+        """Create a complete trace control row for ANY trace (ROI or Mathematical Operation)"""
+        trace_frame = ctk.CTkFrame(parent_frame)
+        trace_frame.pack(fill="x", padx=5, pady=3)
+        
+        # ROW 1: Name, visibility, color, label
+        name_row = ctk.CTkFrame(trace_frame)
+        name_row.pack(fill="x", padx=3, pady=2)
+        
+        # Trace identifier with icon
+        ctk.CTkLabel(name_row, text=f"{icon} {trace_name}", 
+                    font=ctk.CTkFont(weight="bold", size=11), width=140).pack(side="left")
+        
+        # Visibility checkbox
+        visible_var = tk.BooleanVar(value=self.trace_custom[trace_name]['visible'])
+        ctk.CTkCheckBox(name_row, text="Show", variable=visible_var, width=50).pack(side="left", padx=2)
+        
+        # Color button
+        color_btn = ctk.CTkButton(
+            name_row, text="Color", width=60, height=25,
+            fg_color=self.trace_custom[trace_name]['color'],
+            command=lambda tn=trace_name: self._choose_color(tn)
+        )
+        color_btn.pack(side="left", padx=3)
+        
+        # Label entry
+        label_var = tk.StringVar(value=self.trace_custom[trace_name]['label'])
+        ctk.CTkEntry(name_row, textvariable=label_var, width=80, height=25).pack(side="left", padx=3)
+        
+        # ROW 2: Line properties
+        props_row = ctk.CTkFrame(trace_frame)
+        props_row.pack(fill="x", padx=3, pady=2)
+        
+        # Line width
+        ctk.CTkLabel(props_row, text="Width:", width=45).pack(side="left")
+        linewidth_var = tk.DoubleVar(value=self.trace_custom[trace_name]['linewidth'])
+        ctk.CTkSlider(props_row, from_=0.5, to=5.0, variable=linewidth_var, width=70).pack(side="left", padx=2)
+        
+        # Marker size  
+        ctk.CTkLabel(props_row, text="Size:", width=35).pack(side="left")
+        markersize_var = tk.DoubleVar(value=self.trace_custom[trace_name]['markersize'])
+        ctk.CTkSlider(props_row, from_=2, to=12, variable=markersize_var, width=70).pack(side="left", padx=2)
+        
+        # ROW 3: Style and marker
+        style_row = ctk.CTkFrame(trace_frame)
+        style_row.pack(fill="x", padx=3, pady=2)
+        
+        # Line style
+        ctk.CTkLabel(style_row, text="Style:", width=45).pack(side="left")
+        linestyle_var = tk.StringVar(value=self.trace_custom[trace_name]['linestyle'])
+        ctk.CTkComboBox(style_row, values=linestyle_options, 
+                        variable=linestyle_var, width=60).pack(side="left", padx=2)
+        
+        # Marker
+        ctk.CTkLabel(style_row, text="Marker:", width=50).pack(side="left")
+        marker_var = tk.StringVar(value=self.trace_custom[trace_name]['marker'])
+        ctk.CTkComboBox(style_row, values=marker_options,
+                        variable=marker_var, width=60).pack(side="left", padx=2)
+        
+        # Store controls for this trace
+        self.trace_controls[trace_name] = {
+            'visible_var': visible_var,
+            'color_btn': color_btn,
+            'label_var': label_var,
+            'linewidth_var': linewidth_var,
+            'linestyle_var': linestyle_var,
+            'marker_var': marker_var,
+            'markersize_var': markersize_var
+        }
+
+    def _create_average_trace_controls(self, parent_frame, marker_options, linestyle_options):
+        """Create average trace controls"""
+        avg_trace_frame = ctk.CTkFrame(parent_frame)
+        avg_trace_frame.pack(fill="x", padx=5, pady=3)
+        
+        # Average trace visibility and color
+        avg_name_row = ctk.CTkFrame(avg_trace_frame)
+        avg_name_row.pack(fill="x", padx=3, pady=2)
+        
+        ctk.CTkLabel(avg_name_row, text="📈 Average Trace", 
+                    font=ctk.CTkFont(weight="bold", size=11), width=140).pack(side="left")
+        
+        avg_visible_var = tk.BooleanVar(value=self.avg_trace_settings['visible'])
+        ctk.CTkCheckBox(avg_name_row, text="Show", variable=avg_visible_var, width=50).pack(side="left", padx=2)
+        
+        avg_color_btn = ctk.CTkButton(avg_name_row, text="Color", width=60, height=25,
+                                    fg_color=self.avg_trace_settings['color'],
+                                    command=self._choose_avg_color)
+        avg_color_btn.pack(side="left", padx=3)
+        
+        avg_label_var = tk.StringVar(value=self.avg_trace_settings['label'])
+        ctk.CTkEntry(avg_name_row, textvariable=avg_label_var, width=80, height=25).pack(side="left", padx=3)
+        
+        # Average trace properties
+        avg_props_row = ctk.CTkFrame(avg_trace_frame)
+        avg_props_row.pack(fill="x", padx=3, pady=2)
+        
+        # Line width
+        ctk.CTkLabel(avg_props_row, text="Width:", width=45).pack(side="left")
+        avg_linewidth_var = tk.DoubleVar(value=self.avg_trace_settings['linewidth'])
+        ctk.CTkSlider(avg_props_row, from_=0.5, to=5.0, variable=avg_linewidth_var, width=70).pack(side="left", padx=2)
+        
+        # Marker size
+        ctk.CTkLabel(avg_props_row, text="Size:", width=35).pack(side="left")
+        avg_markersize_var = tk.DoubleVar(value=self.avg_trace_settings['markersize'])
+        ctk.CTkSlider(avg_props_row, from_=2, to=12, variable=avg_markersize_var, width=70).pack(side="left", padx=2)
+        
+        # Average trace style and marker
+        avg_style_row = ctk.CTkFrame(avg_trace_frame)
+        avg_style_row.pack(fill="x", padx=3, pady=2)
+        
+        ctk.CTkLabel(avg_style_row, text="Style:", width=45).pack(side="left")
+        avg_linestyle_var = tk.StringVar(value=self.avg_trace_settings['linestyle'])
+        ctk.CTkComboBox(avg_style_row, values=linestyle_options,
+                        variable=avg_linestyle_var, width=60).pack(side="left", padx=2)
+        
+        ctk.CTkLabel(avg_style_row, text="Marker:", width=50).pack(side="left")
+        avg_marker_var = tk.StringVar(value=self.avg_trace_settings['marker'])
+        ctk.CTkComboBox(avg_style_row, values=marker_options,
+                        variable=avg_marker_var, width=60).pack(side="left", padx=2)
+        
+        # Store average trace controls
+        self.avg_trace_controls = {
+            'visible_var': avg_visible_var,
+            'color_btn': avg_color_btn,
+            'label_var': avg_label_var,
+            'linewidth_var': avg_linewidth_var,
+            'linestyle_var': avg_linestyle_var,
+            'marker_var': avg_marker_var,
+            'markersize_var': avg_markersize_var
+        }
+
     def _choose_avg_color(self):
         """Choose color for average trace"""
         current_color = self.avg_trace_settings['color']
