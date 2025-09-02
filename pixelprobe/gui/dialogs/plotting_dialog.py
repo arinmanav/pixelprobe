@@ -15,6 +15,8 @@ from pathlib import Path
 import logging
 from datetime import datetime
 import matplotlib.ticker as ticker
+import math
+import re
 
 # Import ROIType for enum handling
 try:
@@ -96,8 +98,9 @@ class ROIFramePlottingDialog:
         self._create_roi_selection_section()
         self._create_plot_settings_section()
         self._create_individual_traces_section()
+        self._create_mathematical_operations_section()
         self._create_export_section()
-        
+
     def _create_plot_area(self):
         """Create plot area with FIXED sizing"""
         plot_frame = ctk.CTkFrame(self.dialog)
@@ -667,11 +670,416 @@ class ROIFramePlottingDialog:
                     'averages': averages
                 }
 
+    def _create_mathematical_operations_section(self):
+        """Create mathematical operations section for trace arithmetic - FIXED LAYOUT"""
+        if not self.roi_selector or not self.roi_selector.rois:
+            return
+        
+        operations_frame = ctk.CTkFrame(self.control_scroll)
+        operations_frame.pack(fill="x", padx=5, pady=5)
+        
+        ctk.CTkLabel(operations_frame, text="🔢 Mathematical Operations", 
+                    font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(10, 5))
+        
+        operations_scroll = ctk.CTkScrollableFrame(operations_frame, height=350)
+        operations_scroll.pack(fill="x", padx=8, pady=5)
+        
+        if not hasattr(self, 'mathematical_operations'):
+            self.mathematical_operations = {}
+            self.operation_controls = {}
+            self.operation_counter = 0
+        
+        add_operation_frame = ctk.CTkFrame(operations_scroll)
+        add_operation_frame.pack(fill="x", padx=2, pady=2)
+        
+        ctk.CTkLabel(add_operation_frame, text="Create New Operation:",
+                    font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(5, 2))
+        
+        operation_input_frame = ctk.CTkFrame(add_operation_frame)
+        operation_input_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Name input - BETTER LAYOUT
+        name_frame = ctk.CTkFrame(operation_input_frame)
+        name_frame.pack(fill="x", pady=3)
+        
+        ctk.CTkLabel(name_frame, text="Name:", width=70).pack(side="left")
+        self.new_operation_name = ctk.CTkEntry(name_frame, width=200, placeholder_text="e.g., ROI1_plus_ROI2")
+        self.new_operation_name.pack(side="left", padx=5, fill="x", expand=True)
+        
+        # Expression input - BETTER LAYOUT
+        expr_frame = ctk.CTkFrame(operation_input_frame)
+        expr_frame.pack(fill="x", pady=3)
+        
+        ctk.CTkLabel(expr_frame, text="Expression:", width=70).pack(side="left")
+        self.new_operation_expr = ctk.CTkEntry(expr_frame, width=180, placeholder_text="e.g., A + B, A * 2")
+        self.new_operation_expr.pack(side="left", padx=5)
+        
+        help_btn = ctk.CTkButton(expr_frame, text="Help", width=50, height=28,
+                                command=self._show_expression_help)
+        help_btn.pack(side="left", padx=5)
+        
+        # Variables section - COMPACT LAYOUT
+        var_frame = ctk.CTkFrame(operation_input_frame)
+        var_frame.pack(fill="x", pady=3)
+        
+        ctk.CTkLabel(var_frame, text="Variables:", width=70).pack(side="left", anchor="n")
+        
+        self.var_assignment_frame = ctk.CTkFrame(var_frame)
+        self.var_assignment_frame.pack(side="left", fill="x", expand=True, padx=5)
+        
+        self._create_variable_assignments()
+        
+        # Create button - BETTER SIZE AND POSITION
+        create_btn = ctk.CTkButton(operation_input_frame, text="Create Operation", 
+                                width=280, height=35, fg_color="green",
+                                command=self._create_mathematical_operation)
+        create_btn.pack(pady=8)
+        
+        # Separator
+        separator = ctk.CTkFrame(operations_scroll, height=2)
+        separator.pack(fill="x", padx=2, pady=5)
+        
+        # Existing operations
+        self.existing_operations_frame = ctk.CTkFrame(operations_scroll)
+        self.existing_operations_frame.pack(fill="x", padx=2, pady=5)
+        
+        ctk.CTkLabel(self.existing_operations_frame, text="Existing Operations:",
+                    font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(5, 2))
+        
+        self.operations_list_frame = ctk.CTkScrollableFrame(self.existing_operations_frame, height=180)
+        self.operations_list_frame.pack(fill="x", padx=5, pady=5)
+        
+        self._refresh_operations_list()
+
+    def _create_variable_assignments(self):
+        """Create variable assignment dropdowns - COMPACT LAYOUT"""
+        for widget in self.var_assignment_frame.winfo_children():
+            widget.destroy()
+        
+        available_traces = list(self.trace_custom.keys()) if hasattr(self, 'trace_custom') else []
+        if not available_traces:
+            ctk.CTkLabel(self.var_assignment_frame, text="No traces available").pack()
+            return
+        
+        self.variable_dropdowns = {}
+        variables = ['A', 'B', 'C', 'D']
+        
+        # Create 2x2 grid for variables
+        for i, var in enumerate(variables):
+            row = i // 2
+            col = i % 2
+            
+            if col == 0:
+                var_row = ctk.CTkFrame(self.var_assignment_frame)
+                var_row.pack(fill="x", pady=1)
+            
+            var_container = ctk.CTkFrame(var_row)
+            var_container.pack(side="left", padx=2, fill="x", expand=True)
+            
+            ctk.CTkLabel(var_container, text=f"{var}=", width=20).pack(side="left")
+            
+            dropdown = ctk.CTkComboBox(var_container, values=["None"] + available_traces, width=90)
+            dropdown.set("None")
+            dropdown.pack(side="left", padx=2)
+            
+            self.variable_dropdowns[var] = dropdown
+
+    def _create_variable_assignments(self):
+        """Create variable assignment dropdowns"""
+        for widget in self.var_assignment_frame.winfo_children():
+            widget.destroy()
+        
+        available_traces = list(self.trace_custom.keys()) if hasattr(self, 'trace_custom') else []
+        if not available_traces:
+            ctk.CTkLabel(self.var_assignment_frame, text="No traces available").pack()
+            return
+        
+        self.variable_dropdowns = {}
+        variables = ['A', 'B', 'C', 'D']
+        
+        for i, var in enumerate(variables):
+            var_row = ctk.CTkFrame(self.var_assignment_frame)
+            var_row.pack(fill="x", pady=1)
+            
+            ctk.CTkLabel(var_row, text=f"{var} =", width=30).pack(side="left")
+            
+            dropdown = ctk.CTkComboBox(var_row, values=["None"] + available_traces, width=120)
+            dropdown.set("None")
+            dropdown.pack(side="left", padx=5)
+            
+            self.variable_dropdowns[var] = dropdown
+
+    def _show_expression_help(self):
+        """Show help dialog for expression syntax"""
+        help_text = """Mathematical Expression Help:
+
+    OPERATORS:
+    + : Addition (A + B, A + 5)
+    - : Subtraction (A - B, A - 2) 
+    * : Multiplication (A * B, A * 0.5)
+    / : Division (A / B, A / 2)
+    ** : Power (A ** 2, A ** 0.5)
+
+    FUNCTIONS:
+    abs(A) : Absolute value
+    sqrt(A) : Square root  
+    log(A) : Natural logarithm
+    log10(A) : Base-10 logarithm
+    sin(A), cos(A), tan(A) : Trigonometric functions
+    exp(A) : Exponential function
+
+    EXAMPLES:
+    - A + B : Add two traces
+    - A * 2 : Multiply trace by constant
+    - (A + B) / 2 : Average of two traces
+    - A - B : Difference between traces
+    - sqrt(A**2 + B**2) : Euclidean combination
+    - abs(A - B) : Absolute difference
+
+    VARIABLES:
+    Assign traces to variables A, B, C, D using dropdowns below.
+    Constants can be used directly in expressions.
+    """
+        
+        messagebox.showinfo("Expression Syntax Help", help_text)
+
+    def _create_mathematical_operation(self):
+        """Create a new mathematical operation"""
+        try:
+            name = self.new_operation_name.get().strip()
+            expression = self.new_operation_expr.get().strip()
+            
+            if not name or not expression:
+                messagebox.showwarning("Input Required", "Please enter both name and expression")
+                return
+            
+            if name in self.mathematical_operations or name in self.trace_custom:
+                messagebox.showwarning("Name Exists", "Operation name already exists. Please choose a different name.")
+                return
+            
+            variables = {}
+            for var, dropdown in self.variable_dropdowns.items():
+                selected = dropdown.get()
+                if selected != "None":
+                    variables[var] = selected
+            
+            if not variables:
+                messagebox.showwarning("Variables Required", "Please assign at least one variable to a trace")
+                return
+            
+            expr_variables = set(re.findall(r'\b[A-D]\b', expression))
+            assigned_variables = set(variables.keys())
+            
+            undefined_vars = expr_variables - assigned_variables
+            if undefined_vars:
+                messagebox.showwarning("Undefined Variables", 
+                                    f"Expression uses undefined variables: {', '.join(undefined_vars)}\n"
+                                    f"Please assign traces to these variables.")
+                return
+            
+            result_data = self._calculate_mathematical_operation(expression, variables)
+            if result_data is None:
+                return
+            
+            self.mathematical_operations[name] = {
+                'expression': expression,
+                'variables': variables.copy(),
+                'data': result_data,
+                'visible': True
+            }
+            
+            default_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
+            color_idx = len(self.trace_custom) % len(default_colors)
+            
+            self.trace_custom[name] = {
+                'color': default_colors[color_idx],
+                'label': name,
+                'visible': True,
+                'linewidth': 2.0,
+                'linestyle': '-',
+                'marker': 's',
+                'markersize': 6
+            }
+            
+            self.plot_data[name] = result_data
+            
+            self.new_operation_name.delete(0, 'end')
+            self.new_operation_expr.delete(0, 'end')
+            for dropdown in self.variable_dropdowns.values():
+                dropdown.set("None")
+            
+            self._refresh_operations_list()
+            self._create_individual_traces_section()
+            
+            messagebox.showinfo("Success", f"Mathematical operation '{name}' created successfully!")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create operation: {str(e)}")
+
+    def _calculate_mathematical_operation(self, expression, variables):
+        """Calculate mathematical operation on traces"""
+        try:
+            import numpy as np
+            import math
+            
+            trace_data = {}
+            all_frames = set()
+            
+            for var, trace_name in variables.items():
+                if trace_name in self.plot_data:
+                    data = self.plot_data[trace_name]
+                    trace_data[var] = {
+                        'frames': data['frame_numbers'],
+                        'values': data['averages']
+                    }
+                    all_frames.update(data['frame_numbers'])
+            
+            if not trace_data:
+                messagebox.showerror("Error", "No valid trace data found for variables")
+                return None
+            
+            common_frames = set(trace_data[list(trace_data.keys())[0]]['frames'])
+            for var_data in trace_data.values():
+                common_frames &= set(var_data['frames'])
+            
+            if not common_frames:
+                messagebox.showerror("Error", "No common frames found between selected traces")
+                return None
+            
+            common_frames = sorted(common_frames)
+            result_frames = []
+            result_values = []
+            
+            for frame in common_frames:
+                try:
+                    frame_values = {}
+                    for var, data in trace_data.items():
+                        if frame in data['frames']:
+                            idx = data['frames'].index(frame)
+                            frame_values[var] = data['values'][idx]
+                    
+                    if len(frame_values) != len(variables):
+                        continue
+                    
+                    safe_dict = {
+                        '__builtins__': {},
+                        'abs': abs,
+                        'sqrt': math.sqrt,
+                        'log': math.log,
+                        'log10': math.log10,
+                        'sin': math.sin,
+                        'cos': math.cos,
+                        'tan': math.tan,
+                        'exp': math.exp,
+                        'pi': math.pi,
+                        'e': math.e,
+                        **frame_values
+                    }
+                    
+                    result = eval(expression, safe_dict)
+                    
+                    if math.isnan(result) or math.isinf(result):
+                        continue
+                    
+                    result_frames.append(frame)
+                    result_values.append(float(result))
+                    
+                except Exception as e:
+                    continue
+            
+            if not result_frames:
+                messagebox.showerror("Error", "No valid results calculated. Check your expression and data.")
+                return None
+            
+            return {
+                'frame_numbers': result_frames,
+                'averages': result_values
+            }
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Calculation failed: {str(e)}")
+            return None
+
+    def _refresh_operations_list(self):
+        """Refresh the list of existing operations"""
+        for widget in self.operations_list_frame.winfo_children():
+            widget.destroy()
+        
+        if not hasattr(self, 'mathematical_operations') or not self.mathematical_operations:
+            ctk.CTkLabel(self.operations_list_frame, text="No operations created yet").pack(pady=5)
+            return
+        
+        for name, operation in self.mathematical_operations.items():
+            op_frame = ctk.CTkFrame(self.operations_list_frame)
+            op_frame.pack(fill="x", padx=2, pady=2)
+            
+            info_frame = ctk.CTkFrame(op_frame)
+            info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=2)
+            
+            ctk.CTkLabel(info_frame, text=name, font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+            
+            var_info = ", ".join([f"{var}={trace}" for var, trace in operation['variables'].items()])
+            ctk.CTkLabel(info_frame, text=f"Expression: {operation['expression']}").pack(anchor="w")
+            ctk.CTkLabel(info_frame, text=f"Variables: {var_info}", 
+                        font=ctk.CTkFont(size=10)).pack(anchor="w")
+            
+            btn_frame = ctk.CTkFrame(op_frame)
+            btn_frame.pack(side="right", padx=5, pady=2)
+            
+            visibility_var = tk.BooleanVar(value=operation['visible'])
+            visibility_cb = ctk.CTkCheckBox(btn_frame, text="Show", variable=visibility_var,
+                                        command=lambda n=name, v=visibility_var: self._toggle_operation_visibility(n, v))
+            visibility_cb.pack(side="left", padx=2)
+            
+            delete_btn = ctk.CTkButton(btn_frame, text="Delete", width=60, height=25,
+                                    command=lambda n=name: self._delete_operation(n))
+            delete_btn.pack(side="left", padx=2)
+
+    def _toggle_operation_visibility(self, operation_name, visibility_var):
+        """Toggle visibility of a mathematical operation"""
+        if operation_name in self.mathematical_operations:
+            self.mathematical_operations[operation_name]['visible'] = visibility_var.get()
+            if operation_name in self.trace_custom:
+                self.trace_custom[operation_name]['visible'] = visibility_var.get()
+
+    def _delete_operation(self, operation_name):
+        """Delete a mathematical operation"""
+        result = messagebox.askyesno("Delete Operation", 
+                                    f"Are you sure you want to delete operation '{operation_name}'?")
+        if result:
+            if operation_name in self.mathematical_operations:
+                del self.mathematical_operations[operation_name]
+            if operation_name in self.trace_custom:
+                del self.trace_custom[operation_name]
+            if operation_name in self.plot_data:
+                del self.plot_data[operation_name]
+            if operation_name in self.trace_controls:
+                del self.trace_controls[operation_name]
+            
+            self._refresh_operations_list()
+            self._create_individual_traces_section()
+
+    def _refresh_variable_assignments_if_exists(self):
+        """Refresh variable assignments if the mathematical operations section exists"""
+        if hasattr(self, 'variable_dropdowns') and hasattr(self, 'var_assignment_frame'):
+            try:
+                self._create_variable_assignments()
+            except:
+                pass
+            
     def _plot_data(self):
         """Create the plot with current data - FIXED with proper average plotting and StringVar handling"""
         try:
             # Get selected ROIs
             selected_rois = [roi_name for roi_name, var in self.roi_checkboxes.items() if var.get()]
+            
+            # ADD mathematical operations that are visible
+            if hasattr(self, 'mathematical_operations'):
+                for op_name, op_data in self.mathematical_operations.items():
+                    if op_data.get('visible', True) and op_name in self.plot_data:
+                        if op_name not in selected_rois:
+                            selected_rois.append(op_name)
+            
             if not selected_rois:
                 messagebox.showwarning("No Selection", "Please select at least one ROI to plot")
                 return
@@ -790,45 +1198,58 @@ class ROIFramePlottingDialog:
             axis_values_font_size = safe_get_numeric(getattr(self, 'axis_values_font_size_var', None), 10)
             legend_font_size = safe_get_numeric(getattr(self, 'legend_font_size_var', None), 10)
             
-            self.subplot.set_title(self.title_var.get(), fontsize=title_font_size, fontweight='bold')
-            self.subplot.set_xlabel(self.xlabel_var.get(), fontsize=axis_label_font_size)
-            self.subplot.set_ylabel(self.ylabel_var.get(), fontsize=axis_label_font_size)
+            # Set title and labels
+            title_text = getattr(self, 'title_var', tk.StringVar(value="ROI vs Frame")).get() or "ROI vs Frame"
+            xlabel_text = getattr(self, 'xlabel_var', tk.StringVar(value="Frame Number")).get() or "Frame Number"
+            ylabel_text = getattr(self, 'ylabel_var', tk.StringVar(value="Average Value")).get() or "Average Value"
             
-            # Set axis tick font sizes
-            self.subplot.tick_params(axis='both', which='major', labelsize=axis_values_font_size)
+            self.subplot.set_title(title_text, fontsize=title_font_size, pad=20)
+            self.subplot.set_xlabel(xlabel_text, fontsize=axis_label_font_size)
+            self.subplot.set_ylabel(ylabel_text, fontsize=axis_label_font_size)
             
-            # Grid
-            if self.grid_var.get():
-                self.subplot.grid(True, alpha=self.grid_alpha_var.get(), 
-                                linewidth=self.grid_width_var.get())
-            
-            # Axis settings
-            if not self.auto_axis_var.get():
-                self.subplot.set_xlim(self.x_min_var.get(), self.x_max_var.get())
-                self.subplot.set_ylim(self.y_min_var.get(), self.y_max_var.get())
-                
-                # Apply step sizes
+            # Apply axis settings
+            if not getattr(self, 'auto_axis_var', tk.BooleanVar(value=True)).get():
                 try:
-                    if self.x_step_var.get() > 0:
-                        self.subplot.xaxis.set_major_locator(ticker.MultipleLocator(self.x_step_var.get()))
-                    if self.y_step_var.get() > 0:
-                        self.subplot.yaxis.set_major_locator(ticker.MultipleLocator(self.y_step_var.get()))
+                    xmin = safe_get_numeric(getattr(self, 'xmin_var', None), None)
+                    xmax = safe_get_numeric(getattr(self, 'xmax_var', None), None)
+                    ymin = safe_get_numeric(getattr(self, 'ymin_var', None), None)
+                    ymax = safe_get_numeric(getattr(self, 'ymax_var', None), None)
+                    
+                    if xmin is not None and xmax is not None:
+                        self.subplot.set_xlim(xmin, xmax)
+                    if ymin is not None and ymax is not None:
+                        self.subplot.set_ylim(ymin, ymax)
                 except:
                     pass
             
-            # Legend with customizable size
-            if plotted_count > 0:
-                self.subplot.legend(loc=self.legend_location_var.get(), fontsize=legend_font_size)
+            # NO CUSTOM TICK LOCATORS - Let matplotlib handle it automatically
             
-            # Update canvas
+            # Format axis values
+            self.subplot.tick_params(axis='both', which='major', labelsize=axis_values_font_size)
+            
+            # Add legend
+            if getattr(self, 'show_legend_var', tk.BooleanVar(value=True)).get():
+                legend_location = getattr(self, 'legend_location_var', tk.StringVar(value='best')).get()
+                self.subplot.legend(loc=legend_location, fontsize=legend_font_size)
+            
+            # Add grid - FIXED to properly toggle
+            try:
+                show_grid = getattr(self, 'show_grid_var', tk.BooleanVar(value=True))
+                if show_grid.get():
+                    self.subplot.grid(True, alpha=0.3)
+                else:
+                    self.subplot.grid(False)
+                    self.subplot.grid(False, which='minor')
+            except:
+                self.subplot.grid(False)
+            
+            # Draw the plot
             self.figure.tight_layout()
             self.canvas.draw()
             
-            print(f"Plot created successfully with {plotted_count} traces")
-            
         except Exception as e:
-            print(f"Error creating plot: {e}")
-            messagebox.showerror("Plot Error", f"Error creating plot:\n{str(e)}")
+            messagebox.showerror("Plot Error", f"Failed to create plot: {str(e)}")
+            print(f"Plot error details: {e}")
 
     def _export_plot(self):
         """Export the plot"""

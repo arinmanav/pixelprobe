@@ -432,7 +432,7 @@ class ROISelector:
         self._visualize_roi(roi)
         self._update_status(f"Added {roi.label} - Total ROIs: {len(self.rois)}")
         self.logger.info(f"Added ROI: {roi.label}")
-        
+
     def _visualize_roi(self, roi: ROI):
         """Add visual representation of ROI with frame tight around selected pixels"""
         if roi.roi_type == ROIType.RECTANGLE:
@@ -443,7 +443,6 @@ class ROISelector:
             h = int(round(roi.coordinates['height']))
             
             # Calculate the exact pixel boundaries
-            # For pixels from x to x+w-1, the boundary goes from x-0.5 to x+w-0.5
             x_min_boundary = x - 0.5
             y_min_boundary = y - 0.5
             x_max_boundary = x + w - 0.5
@@ -474,20 +473,20 @@ class ROISelector:
             )
             self.subplot.add_patch(fill_rect)
             
-            # Add size label outside the frame
+            # FIXED: Add size label OUTSIDE and ABOVE the frame
             label_x = x + w/2  # Center of selected area
-            label_y = y_min_boundary  # Top of frame
+            label_y = y_max_boundary  # CHANGED: Use TOP boundary instead of bottom
             
             self.subplot.annotate(
                 f"{w}×{h}px",
                 (label_x, label_y),
-                xytext=(0, -15), textcoords='offset points',
+                xytext=(0, 10), textcoords='offset points',  # CHANGED: positive offset = ABOVE
                 fontsize=11, color=roi.color, weight='bold',
-                ha='center', va='top',
+                ha='center', va='bottom',  # CHANGED: bottom alignment
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor=roi.color, alpha=0.9)
             )
             
-            # Add corner markers to show exact pixel boundaries (optional, for debugging)
+            # Add corner markers to show exact pixel boundaries
             corner_size = 0.1
             corners = [
                 (x_min_boundary, y_min_boundary),  # bottom-left
@@ -534,13 +533,13 @@ class ROISelector:
                 markeredgewidth=3, markerfacecolor='none', alpha=0.9
             )
             
-            # Add pixel coordinates as text annotation
+            # FIXED: Add pixel coordinates OUTSIDE and ABOVE the pixel
             self.subplot.annotate(
                 f"({x}, {y})",
-                (x, y - 0.5),
-                xytext=(0, -15), textcoords='offset points',
+                (x, y + 0.5),  # CHANGED: Use top of pixel
+                xytext=(0, 10), textcoords='offset points',  # CHANGED: positive offset = ABOVE
                 fontsize=12, color=roi.color,
-                ha='center', va='top',
+                ha='center', va='bottom',  # CHANGED: bottom alignment
                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7)
             )
         
@@ -587,7 +586,6 @@ class ROISelector:
                 )
         
         self.figure.canvas.draw_idle()
-
 
     def _log_roi_coordinates(self, roi: ROI):
         """Enhanced coordinate logging with interior pixel info"""
