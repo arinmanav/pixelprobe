@@ -592,20 +592,6 @@ class ROIFramePlottingDialog:
             self.trace_custom[roi_name]['color'] = color[1]
             self.trace_controls[roi_name]['color_btn'].configure(fg_color=color[1])
 
-    def _update_trace_settings(self):
-        """Update trace settings from UI"""
-        for roi_name, controls in self.trace_controls.items():
-            if roi_name in self.trace_custom:
-                try:
-                    self.trace_custom[roi_name]['visible'] = controls['visible_var'].get()
-                    self.trace_custom[roi_name]['label'] = controls['label_var'].get()
-                    self.trace_custom[roi_name]['linewidth'] = controls['linewidth_var'].get()
-                    self.trace_custom[roi_name]['linestyle'] = controls['linestyle_var'].get()
-                    self.trace_custom[roi_name]['marker'] = controls['marker_var'].get()
-                    self.trace_custom[roi_name]['markersize'] = controls['markersize_var'].get()
-                except:
-                    pass
-
     def _calculate_initial_data(self):
         """Calculate plot data for all ROIs"""
         if not self.roi_selector or not self.roi_selector.rois or not self.current_items:
@@ -1696,13 +1682,13 @@ class ROIFramePlottingDialog:
         trace_frame = ctk.CTkFrame(parent_frame)
         trace_frame.pack(fill="x", padx=5, pady=3)
         
-        # ROW 1: Name, visibility, color, label
+        # ROW 1: Name, visibility, color, and TRACE NAME EDITOR
         name_row = ctk.CTkFrame(trace_frame)
         name_row.pack(fill="x", padx=3, pady=2)
         
         # Trace identifier with icon
         ctk.CTkLabel(name_row, text=f"{icon} {trace_name}", 
-                    font=ctk.CTkFont(weight="bold", size=11), width=140).pack(side="left")
+                    font=ctk.CTkFont(weight="bold", size=11), width=100).pack(side="left")
         
         # Visibility checkbox
         visible_var = tk.BooleanVar(value=self.trace_custom[trace_name]['visible'])
@@ -1716,11 +1702,19 @@ class ROIFramePlottingDialog:
         )
         color_btn.pack(side="left", padx=3)
         
-        # Label entry
-        label_var = tk.StringVar(value=self.trace_custom[trace_name]['label'])
-        ctk.CTkEntry(name_row, textvariable=label_var, width=80, height=25).pack(side="left", padx=3)
+        # ROW 2: TRACE NAME EDITOR (NEW!)
+        label_row = ctk.CTkFrame(trace_frame)
+        label_row.pack(fill="x", padx=3, pady=2)
         
-        # ROW 2: Line properties
+        ctk.CTkLabel(label_row, text="Trace Name:", width=80, 
+                    font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+        
+        # Label entry field - This is what was missing!
+        label_var = tk.StringVar(value=self.trace_custom[trace_name]['label'])
+        label_entry = ctk.CTkEntry(label_row, textvariable=label_var, width=150, height=25)
+        label_entry.pack(side="left", padx=3, fill="x", expand=True)
+        
+        # ROW 3: Line properties
         props_row = ctk.CTkFrame(trace_frame)
         props_row.pack(fill="x", padx=3, pady=2)
         
@@ -1734,7 +1728,7 @@ class ROIFramePlottingDialog:
         markersize_var = tk.DoubleVar(value=self.trace_custom[trace_name]['markersize'])
         ctk.CTkSlider(props_row, from_=2, to=12, variable=markersize_var, width=70).pack(side="left", padx=2)
         
-        # ROW 3: Style and marker
+        # ROW 4: Style and marker
         style_row = ctk.CTkFrame(trace_frame)
         style_row.pack(fill="x", padx=3, pady=2)
         
@@ -1750,11 +1744,11 @@ class ROIFramePlottingDialog:
         ctk.CTkComboBox(style_row, values=marker_options,
                         variable=marker_var, width=60).pack(side="left", padx=2)
         
-        # Store controls for this trace
+        # Store controls for this trace (including the label_var!)
         self.trace_controls[trace_name] = {
             'visible_var': visible_var,
             'color_btn': color_btn,
-            'label_var': label_var,
+            'label_var': label_var,  # This ensures the label changes are captured
             'linewidth_var': linewidth_var,
             'linestyle_var': linestyle_var,
             'marker_var': marker_var,
@@ -1762,16 +1756,16 @@ class ROIFramePlottingDialog:
         }
 
     def _create_average_trace_controls(self, parent_frame, marker_options, linestyle_options):
-        """Create average trace controls"""
+        """Create average trace controls with trace name editing"""
         avg_trace_frame = ctk.CTkFrame(parent_frame)
         avg_trace_frame.pack(fill="x", padx=5, pady=3)
         
-        # Average trace visibility and color
+        # ROW 1: Identity, visibility, and color
         avg_name_row = ctk.CTkFrame(avg_trace_frame)
         avg_name_row.pack(fill="x", padx=3, pady=2)
         
         ctk.CTkLabel(avg_name_row, text="📈 Average Trace", 
-                    font=ctk.CTkFont(weight="bold", size=11), width=140).pack(side="left")
+                    font=ctk.CTkFont(weight="bold", size=11), width=100).pack(side="left")
         
         avg_visible_var = tk.BooleanVar(value=self.avg_trace_settings['visible'])
         ctk.CTkCheckBox(avg_name_row, text="Show", variable=avg_visible_var, width=50).pack(side="left", padx=2)
@@ -1781,10 +1775,19 @@ class ROIFramePlottingDialog:
                                     command=self._choose_avg_color)
         avg_color_btn.pack(side="left", padx=3)
         
-        avg_label_var = tk.StringVar(value=self.avg_trace_settings['label'])
-        ctk.CTkEntry(avg_name_row, textvariable=avg_label_var, width=80, height=25).pack(side="left", padx=3)
+        # ROW 2: TRACE NAME EDITOR FOR AVERAGE (NEW!)
+        avg_label_row = ctk.CTkFrame(avg_trace_frame)
+        avg_label_row.pack(fill="x", padx=3, pady=2)
         
-        # Average trace properties
+        ctk.CTkLabel(avg_label_row, text="Trace Name:", width=80,
+                    font=ctk.CTkFont(size=10)).pack(side="left", padx=2)
+        
+        # Average trace label entry field
+        avg_label_var = tk.StringVar(value=self.avg_trace_settings['label'])
+        avg_label_entry = ctk.CTkEntry(avg_label_row, textvariable=avg_label_var, width=150, height=25)
+        avg_label_entry.pack(side="left", padx=3, fill="x", expand=True)
+        
+        # ROW 3: Line properties
         avg_props_row = ctk.CTkFrame(avg_trace_frame)
         avg_props_row.pack(fill="x", padx=3, pady=2)
         
@@ -1798,7 +1801,7 @@ class ROIFramePlottingDialog:
         avg_markersize_var = tk.DoubleVar(value=self.avg_trace_settings['markersize'])
         ctk.CTkSlider(avg_props_row, from_=2, to=12, variable=avg_markersize_var, width=70).pack(side="left", padx=2)
         
-        # Average trace style and marker
+        # ROW 4: Style and marker
         avg_style_row = ctk.CTkFrame(avg_trace_frame)
         avg_style_row.pack(fill="x", padx=3, pady=2)
         
@@ -1812,11 +1815,11 @@ class ROIFramePlottingDialog:
         ctk.CTkComboBox(avg_style_row, values=marker_options,
                         variable=avg_marker_var, width=60).pack(side="left", padx=2)
         
-        # Store average trace controls
+        # Store average trace controls (including label_var!)
         self.avg_trace_controls = {
             'visible_var': avg_visible_var,
             'color_btn': avg_color_btn,
-            'label_var': avg_label_var,
+            'label_var': avg_label_var,  # This ensures average trace name changes are captured
             'linewidth_var': avg_linewidth_var,
             'linestyle_var': avg_linestyle_var,
             'marker_var': avg_marker_var,
@@ -1830,6 +1833,7 @@ class ROIFramePlottingDialog:
         if color[1]:
             self.avg_trace_settings['color'] = color[1]
             self.avg_trace_controls['color_btn'].configure(fg_color=color[1])
+
 
     def _update_trace_settings(self):
         """Update trace settings from UI - Enhanced for average traces"""
