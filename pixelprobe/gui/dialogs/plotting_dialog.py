@@ -1152,7 +1152,7 @@ class ROIFramePlottingDialog:
                 pass
 
     def _plot_data(self):
-        """Create the plot with current data - FIXED with proper average plotting and WORKING GRID SETTINGS"""
+        """Create the plot with current data - FIXED with proper axis controls and step sizes"""
         try:
             # Get selected ROIs
             selected_rois = [roi_name for roi_name, var in self.roi_checkboxes.items() if var.get()]
@@ -1291,22 +1291,39 @@ class ROIFramePlottingDialog:
             self.subplot.set_xlabel(xlabel_text, fontsize=axis_label_font_size)
             self.subplot.set_ylabel(ylabel_text, fontsize=axis_label_font_size)
             
-            # Apply axis settings
+            # FIXED: Apply axis settings with correct variable names and step sizes
             if not getattr(self, 'auto_axis_var', tk.BooleanVar(value=True)).get():
                 try:
-                    xmin = safe_get_numeric(getattr(self, 'xmin_var', None), None)
-                    xmax = safe_get_numeric(getattr(self, 'xmax_var', None), None)
-                    ymin = safe_get_numeric(getattr(self, 'ymin_var', None), None)
-                    ymax = safe_get_numeric(getattr(self, 'ymax_var', None), None)
+                    # FIXED: Use CORRECT variable names (with x_ and y_ prefixes)
+                    xmin = safe_get_numeric(getattr(self, 'x_min_var', None), None)
+                    xmax = safe_get_numeric(getattr(self, 'x_max_var', None), None)
+                    ymin = safe_get_numeric(getattr(self, 'y_min_var', None), None)
+                    ymax = safe_get_numeric(getattr(self, 'y_max_var', None), None)
                     
+                    # NEW: Get step values
+                    x_step = safe_get_numeric(getattr(self, 'x_step_var', None), None)
+                    y_step = safe_get_numeric(getattr(self, 'y_step_var', None), None)
+                    
+                    # Apply axis limits
                     if xmin is not None and xmax is not None:
                         self.subplot.set_xlim(xmin, xmax)
                     if ymin is not None and ymax is not None:
                         self.subplot.set_ylim(ymin, ymax)
-                except:
+                    
+                    # NEW: Apply step values for tick spacing
+                    if x_step is not None and x_step > 0 and xmin is not None and xmax is not None:
+                        # Create custom x-axis ticks based on step size
+                        x_ticks = np.arange(xmin, xmax + x_step/2, x_step)  # +step/2 to include xmax
+                        self.subplot.set_xticks(x_ticks)
+                        
+                    if y_step is not None and y_step > 0 and ymin is not None and ymax is not None:
+                        # Create custom y-axis ticks based on step size
+                        y_ticks = np.arange(ymin, ymax + y_step/2, y_step)  # +step/2 to include ymax
+                        self.subplot.set_yticks(y_ticks)
+                        
+                except Exception as e:
+                    print(f"Error applying manual axis settings: {e}")
                     pass
-            
-            # NO CUSTOM TICK LOCATORS - Let matplotlib handle it automatically
             
             # Format axis values
             self.subplot.tick_params(axis='both', which='major', labelsize=axis_values_font_size)
@@ -1346,6 +1363,7 @@ class ROIFramePlottingDialog:
         except Exception as e:
             messagebox.showerror("Plot Error", f"Failed to create plot: {str(e)}")
             print(f"Plot error details: {e}")
+
 
     def _export_plot(self):
         """Export the plot"""
